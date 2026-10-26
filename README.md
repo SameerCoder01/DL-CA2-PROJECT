@@ -2,11 +2,21 @@
 
 **DL CA2 PROJECT · Streamlit frontend in `App.py` · PyTorch training in `model.py`**
 
+[![Python checks](https://github.com/SameerCoder01/DL-CA2-PROJECT/actions/workflows/checks.yml/badge.svg)](https://github.com/SameerCoder01/DL-CA2-PROJECT/actions/workflows/checks.yml)
+
 Upload a photo, inspect the damage mask, repair scratches and fading, compare before/after and download a PNG. Optional pretrained colorization is provided separately.
 
 ## Current status
 
 The application and training/evaluation pipeline are implemented. **No trained restoration checkpoint, downloaded dataset or measured training results are included.** Until training completes, the frontend exposes a clearly labeled **OpenCV baseline**. It does not represent that baseline as deep learning. Consult GitHub Actions for the actual test outcome; writing a test does not mean it passed.
+
+Initial validation: [5 functional tests passed](https://github.com/SameerCoder01/DL-CA2-PROJECT/actions/runs/40312392538), including a one-epoch training smoke test. Python 3.12 syntax checks also passed locally. This is execution validation, not restoration quality evaluation.
+
+If the ChatGPT Work session cannot access Downloads or the internet, run `bootstrap_downloads.ps1` from your own PowerShell. It clones this repository into Downloads, installs a signed official Python 3.12 installer if necessary, creates the environment, verifies CUDA and tests, starts the app at `http://localhost:8501`, and runs dataset download, training and evaluation with console output. The script does not overwrite an unrelated existing Downloads folder. Keep the terminal open during training.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\bootstrap_downloads.ps1
+```
 
 ## Windows setup (RTX 4050 / 6 GB)
 
