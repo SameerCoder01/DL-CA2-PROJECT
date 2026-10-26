@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.pytest_cache/
+data/
+weights/
+runs/
+outputs/
+*.zip
+*.log
+.env
+.streamlit/secrets.toml
+!**/.gitkeep
