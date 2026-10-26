@@ -43,6 +43,13 @@ with st.sidebar:
         st.success("Restoration checkpoint available")
     else:
         st.info("Pix2Pix GAN weights are not trained yet. Baseline uses OpenCV; it is not deep learning.")
+    job_file = ROOT / "runs/pix2pix/job_status.json"
+    if job_file.is_file():
+        job = json.loads(job_file.read_text(encoding="utf-8"))
+        if job["state"] == "running":
+            st.info("GAN training/evaluation is still running. Available checkpoints are intermediate results.")
+        elif job["state"] == "failed":
+            st.warning("The training job stopped. Check the training log before using this checkpoint.")
     st.caption(f"Hardware: {'CUDA GPU' if torch.cuda.is_available() else 'CPU'}")
     strength = st.slider("Restoration strength", 0., 1., .65, .05)
     mask_mode = st.radio("Damage mask", ["Automatic proposal", "Upload a mask", "No scratch repair"])
