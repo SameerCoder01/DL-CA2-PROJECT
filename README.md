@@ -10,6 +10,8 @@ Install/reinstall the accepted model files with `..\work\python312\python.exe se
 
 The user screen is deliberately simple: **upload -> automatic restoration -> original/restored photos -> one PNG download button**. There is no sidebar, technical settings, demo switch, mask upload or training dashboard in the customer-facing app. Scratch detection and processing size are chosen internally. Black-and-white photos keep their original color style.
 
+The interface uses a responsive dark plum and lavender design, a dedicated upload card, framed before/after photographs and a clear PNG download action. The visual refresh does not change the restoration models or processing.
+
 ## Model and training
 - A compact residual U-Net **Generator** restores damaged RGB + a damage mask.
 - A conditional **70x70 PatchGAN Discriminator** judges real clean and generated photos.
