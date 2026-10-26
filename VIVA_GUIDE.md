@@ -11,7 +11,7 @@ Only say "trained" after actual training completes and the results are checked.
 3. `PatchDiscriminator` condition aur real/generated image saath dekhta hai aur patches ke logits deta hai.
 4. `gan_train_step` pehle D update, phir G update karta hai.
 5. `train` epochs repeat karta hai, validation aur checkpoints save karta hai.
-6. `neural_restore` inference mein sirf Generator chalata hai. Overlapping tiles memory limit karte hain. App uske baad `repair_scratches` se selected mask par OpenCV cleanup karta hai; yeh GAN se alag step hai.
+6. `restore_automatic` narrow scratch mask detect karta hai. `neural_restore` mein sirf Generator chalta hai; overlapping tiles memory limit karte hain. Selected scratches original local context se inpaint hote hain, phir intact pixels se estimated GAN tone correction milti hai. Yeh OpenCV stage GAN se alag hai.
 7. `App.py` mein user sirf photo upload karta hai. App automatic mask, processing size aur trained Generator choose karta hai, phir original/restored images aur ek Download button dikhata hai. Technical settings aur graphs frontend se hata diye gaye hain.
 
 ## Main training step
@@ -22,8 +22,9 @@ Only say "trained" after actual training completes and the results are checked.
 - `d_loss.backward(); optimizer_d.step()`: D ko improve karna.
 - `discriminator.requires_grad_(False)`: G step mein D ki weights freeze. Gradient D ke operations se G tak phir bhi flow karta hai.
 - `BCE(fake_score, ones)`: G chahta hai D output ko real samjhe.
-- `L1(fake, target)`: output ko correct clean target ke paas rakhna.
-- `g_loss = adversarial + 100 * reconstruction`: realism aur content matching dono.
+- Scratch-weighted L1: scratch pixels ko 9x importance; total weights se normalize. Chhote damaged regions global average mein ignore nahi hote.
+- Edge L1: horizontal/vertical neighbouring pixel differences match karna, taaki excessive smoothing reduce ho.
+- `g_loss = adversarial + 100 * (reconstruction + 0.15 * edge)`: realism, correct content aur edges.
 - `g_loss.backward(); optimizer_g.step()`: G ko improve karna.
 
 ## Viva questions
@@ -46,4 +47,6 @@ Only say "trained" after actual training completes and the results are checked.
 | Limitations? | Severe missing areas, false masks, unseen damage, invented detail. |
 
 Show both network classes, gan_train_step, actual G/D loss curves and held-out comparisons. OpenCV or old supervised weights ko GAN output mat batana. Compact Generator original eight-level Pix2Pix ka adaptation hai.
+
+Epoch 10 active hai: 800 training / 100 validation sources, four extra epochs from epoch 6. 30% paired B&W examples mein input aur target dono grayscale hain; 25% training pairs estimated masks use karte hain. Colorization nahi sikhayi. Automatic-mask validation comparison: PSNR 21.12 -> 21.14 dB; SSIM 0.801 -> 0.813; scratch MAE 45.52 -> 36.26. Healthy contrast ho to GAN correction automatically kam hoti hai, taaki intact texture preserve ho. Separate category checks mein faded, scratched, damaged aur B&W sabke average PSNR/SSIM improve hue. Validation detector tuning mein bhi use hua, isliye independent test nahi hai. Large missing areas mein original detail recover hone ka claim nahi karna.
 

@@ -1,5 +1,38 @@
 # Validation - 26 October 2026
 
+## Current active model: epoch 10
+
+Terminal access and CUDA RTX 4050 were verified in the Documents project. Resumed the existing epoch-6 G/D and optimizers for four additional epochs (800 samples/epoch, batch 4, 256 crops). Scratch pixels get 9x normalized L1 weight plus 0.15 edge L1; 30% paired grayscale and 25% estimated-mask inputs improve task coverage. Actual optimizer LR was 0.0002 inherited from the checkpoint; the initially requested 0.0001 did not take effect because the previous resume code restored optimizer LR. Metadata now records both values, and resume code applies requested LR for future runs.
+
+Training-branch best is epoch 10. Its fixed validation PSNR is 23.19 dB, SSIM 0.8198. Validation augmentation changed, so that score must not be directly compared with the old epoch-6 selection score.
+
+The fair comparison below uses identical 100 validation center crops, seeds 191000-191099, automatic masks, including 34 grayscale cases:
+
+| Metric | Old app + epoch 6 | Current app + epoch 10 |
+|---|---:|---:|
+| PSNR (dB) | 21.1196 | 21.1437 |
+| SSIM | 0.800816 | 0.813252 |
+| Scratch MAE (0-255; lower better) | 45.5213 | 36.2566 |
+| Mask recall | 0.7927 | 0.8696 |
+| Mask precision | 0.2930 | 0.4720 |
+
+Scratch MAE decreased 20.35%; overall PSNR is essentially unchanged. A weights-only change with the old pipeline gave PSNR 21.3335, SSIM 0.807727, scratch MAE 43.2653. Fixed 0.9 GAN strength gave mixed-damage PSNR 22.0740, SSIM 0.824957 and scratch MAE 34.4355, but reduced SSIM on scratch-only and damage-only photos. Final adaptive strength trades that mixed-fade score for preservation of intact texture across all required categories. Broader brightness thresholds initially regressed on the remaining 80 images and were rejected. Final masks retain conservative brightness thresholds, narrower contrast-supported Hough masks and a short isolated-line pass.
+
+Separate category checks on 13 validation sources each (`category_review.py`, `outputs/category_review/metrics.json`), input -> restored:
+
+| Category | PSNR (dB) | SSIM |
+|---|---|---|
+| Faded | 21.13 -> 24.48 | 0.8925 -> 0.9535 |
+| Scratched | 21.52 -> 28.84 | 0.9388 -> 0.9597 |
+| Damaged spots + scratch | 23.06 -> 29.69 | 0.9651 -> 0.9682 |
+| Faded B&W | 21.74 -> 25.74 | 0.9038 -> 0.9631 |
+
+All 13 B&W outputs have identical RGB channels. Category settings are distinct from the mixed synthetic corruption; these remain small validation checks, not independent testing. Colorization is optional and is not enabled in the simple app.
+
+Evidence: `outputs/quality_baseline`, `outputs/quality_confirm_old`, `outputs/quality_weights_only`, and `outputs/quality_final/metrics.json` + `promotion.json`. Actual comparison images include grayscale penguin `0801_comparison.png` and the existing `local_demo_comparison.png`; both were visually inspected. Many scratches disappear, but some fine marks and smooth/incorrect large-area fills remain. This is synthetic damage on validation sources also used for checkpoint selection and detector tuning, not an independent test or real historical-photo benchmark.
+
+Epoch-6 active files are backed up at `runs/pix2pix-backup-6-quality`. Epoch-10 best and resumable last are promoted at `runs/pix2pix`. Ten functional tests pass, including an identity-generator regression that checks white damage is not blended back into repaired pixels. The app's actual side-panel upload, before/after and download flow was exercised; the downloaded PNG exactly matches the evaluated local-demo result. Earlier sections below are historical results.
+
 - Python 3.12 syntax checks passed.
 - Eight local functional tests passed in 9.62 seconds on CPU.
 - Tests cover adversarial-only updates of both networks, PatchGAN output dimensions, rejection of old supervised weights, GAN save/load/resume, tiled inference, safe extraction and Streamlit startup.

@@ -88,7 +88,20 @@ def detect_scratches(image: np.ndarray, sensitivity: int = 22) -> np.ndarray:
                             minLineLength=minimum, maxLineGap=5)
     if lines is not None:
         for x1,y1,x2,y2 in lines[:,0]:
-            cv2.line(mask,(int(x1),int(y1)),(int(x2),int(y2)),255,3)
+            cv2.line(mask,(int(x1),int(y1)),(int(x2),int(y2)),255,1)
+    # A Hough line is evidence, not a filled repair region. Intersect its narrow
+    # neighbourhood with actual contrast candidates so gaps retain real texture.
+    support = cv2.dilate(mask, np.ones((5,5),np.uint8))
+    mask = cv2.bitwise_and(support, candidate)
+    # Short, isolated hairline scratches may not accumulate enough Hough votes.
+    contours, _ = cv2.findContours(candidate, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for contour in contours:
+        (_, _), (cw, ch), _ = cv2.minAreaRect(contour)
+        length, width = max(cw,ch), min(cw,ch)
+        if length >= max(12,min(gray.shape)//24) and length/max(width,1) >= 7:
+            region = np.zeros_like(gray)
+            cv2.drawContours(region,[contour],-1,255,-1)
+            mask = cv2.bitwise_or(mask,cv2.bitwise_and(region,candidate))
     mask = cv2.dilate(mask, np.ones((3,3),np.uint8))
     # Small bright flat spots can be peeling or missing paper. Thin lines have
     # no thick core, so they do not interfere with this spot check.
@@ -117,6 +130,38 @@ def classical_restore(image: np.ndarray, mask: np.ndarray, strength: float = .65
     lab[:, :, 0] = cv2.createCLAHE(clipLimit=1.6, tileGridSize=(8, 8)).apply(lab[:, :, 0])
     enhanced = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
     return cv2.addWeighted(enhanced, strength, repaired, 1-strength, 0)
+
+
+def restore_automatic(net, photo, device="cpu", return_mask=False):
+    """GAN tone restoration plus narrow, original-image scratch interpolation.
+
+    Inpainting the original avoids propagating GAN scratch halos into the fill.
+    Never blend the damaged original back inside a selected scratch.
+    """
+    mask = detect_scratches(photo, 32)
+    if np.mean(mask > 0) > .08:
+        mask = detect_scratches(photo, 50)
+    if np.mean(mask > 0) > .12:
+        mask = np.zeros(photo.shape[:2], np.uint8)
+    generated = neural_restore(net, photo, mask, device)
+    # Match the fill to GAN-restored tones, while retaining original local detail.
+    repaired = repair_scratches(photo, mask)
+    # A photo with a healthy tonal range needs much less global GAN correction.
+    # This protects intact texture in photos whose only defect is a scratch.
+    gray = cv2.cvtColor(photo,cv2.COLOR_RGB2GRAY)
+    values = gray[mask == 0]
+    low,high = np.percentile(values if values.size else gray,[1,99])
+    strength = float(np.clip((185-(high-low))/45,.1,.9))
+    intact = (mask == 0).astype(np.float32)[:,:,None]
+    residual = (generated.astype(np.float32)-photo.astype(np.float32))*intact
+    tone = cv2.GaussianBlur(residual, (0,0), 5) / np.maximum(
+        cv2.GaussianBlur(intact[:,:,0], (0,0), 5)[:,:,None], .01)
+    filled = np.clip(repaired.astype(np.float32)+strength*tone,0,255).astype(np.uint8)
+    restored = cv2.addWeighted(generated,strength,repaired,1-strength,0)
+    restored[mask > 0] = filled[mask > 0]
+    if (photo.max(axis=2).astype(float)-photo.min(axis=2)).mean() < 3:
+        restored = cv2.cvtColor(cv2.cvtColor(restored,cv2.COLOR_RGB2GRAY),cv2.COLOR_GRAY2RGB)
+    return (restored, mask) if return_mask else restored
 
 
 class Block(nn.Module):
@@ -201,8 +246,14 @@ def gan_train_step(generator, discriminator, optimizer_g, optimizer_d, inp, targ
     try:
         logits = discriminator(inp, fake)
         adversarial = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits))
-        reconstruction = F.l1_loss(fake, target)
-        g_loss = adversarial + lambda_l1 * reconstruction
+        # Scratches occupy few pixels: ordinary global L1 rewards leaving them.
+        # Give damaged pixels nine times the weight, normalized by total weight.
+        weights = 1 + 8 * inp[:, 3:4]
+        reconstruction = ((fake-target).abs()*weights).sum() / (3*weights.sum())
+        # Preserve edges instead of reducing all uncertain detail to smooth fills.
+        edge = .5 * (F.l1_loss(fake[:,:,:,1:]-fake[:,:,:,:-1], target[:,:,:,1:]-target[:,:,:,:-1]) +
+                     F.l1_loss(fake[:,:,1:,:]-fake[:,:,:-1,:], target[:,:,1:,:]-target[:,:,:-1,:]))
+        g_loss = adversarial + lambda_l1 * (reconstruction + .15*edge)
         if not torch.isfinite(g_loss):
             raise RuntimeError("Non-finite generator loss")
         g_loss.backward()
@@ -240,7 +291,13 @@ class PhotoPairs(Dataset):
             if rng.random() < .5:
                 clean = np.fliplr(clean).copy()
             clean = np.rot90(clean, rng.randrange(4)).copy()
+        # B&W restoration is paired B&W -> B&W, never forced colorization.
+        if rng.random() < .3:
+            clean = cv2.cvtColor(cv2.cvtColor(clean,cv2.COLOR_RGB2GRAY),cv2.COLOR_GRAY2RGB)
         degraded, mask = damage(clean, rng.randrange(2**31))
+        # Expose G to automatic-mask misses as well as exact synthetic masks.
+        if not self.validation and rng.random() < .25:
+            mask = detect_scratches(degraded,32)
         return torch.cat([tensor(degraded), torch.from_numpy(mask.copy()).unsqueeze(0).float()/255]), tensor(clean)
 
 
@@ -297,12 +354,18 @@ def train(args):
         checkpoint = torch.load(args.resume, map_location=device, weights_only=True)
         if checkpoint.get("model_type") != "pix2pix_gan":
             raise ValueError("This is not a Pix2Pix GAN checkpoint. Start a fresh GAN run.")
-        print("Resume restores both GAN networks and optimizers; keep original training settings.", flush=True)
+        print("Resume restores both GAN networks and optimizers; requested LR is applied after loading.", flush=True)
         net.load_state_dict(checkpoint["state_dict"])
         discriminator.load_state_dict(checkpoint["discriminator"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         optimizer_d.load_state_dict(checkpoint["optimizer_d"])
+        for opt in (optimizer, optimizer_d):
+            for group in opt.param_groups:
+                group["lr"] = args.lr
         start, best = checkpoint["epoch"], checkpoint["best_psnr"]
+        if out.resolve() != Path(args.resume).resolve().parent:
+            # A new fine-tuning branch may change validation/augmentation policy.
+            best = -float("inf")
     (out/"config.json").write_text(json.dumps(vars(args), indent=2), encoding="utf-8")
     (out/"split.json").write_text(json.dumps({"train": [str(p) for p in train_files],
         "validation": [str(p) for p in val_files]}, indent=2), encoding="utf-8")

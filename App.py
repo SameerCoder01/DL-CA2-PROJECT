@@ -5,12 +5,11 @@ import logging
 from pathlib import Path
 
 import cv2
-import numpy as np
 from PIL import Image, UnidentifiedImageError
 import streamlit as st
 import torch
 
-from model import ROOT, read_rgb, png_bytes, detect_scratches, load_restorer, neural_restore, repair_scratches
+from model import ROOT, read_rgb, png_bytes, load_restorer, restore_automatic
 
 st.set_page_config(page_title="Reframe | Photo Restoration", page_icon="\U0001F4F7",
                    layout="centered", initial_sidebar_state="collapsed")
@@ -40,22 +39,9 @@ def prepare_photo(photo):
 
 def restore_photo(photo, checkpoint):
     """Run the GAN and conservatively clean automatically detected scratches."""
-    mask = detect_scratches(photo, sensitivity=32)
-    # Real hair and texture can resemble scratches, so avoid a large automatic mask.
-    if np.mean(mask > 0) > .08:
-        mask = detect_scratches(photo, sensitivity=50)
-    if np.mean(mask > 0) > .12:
-        mask = np.zeros(photo.shape[:2], dtype=np.uint8)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = cached_model(str(checkpoint), checkpoint.stat().st_mtime_ns, device)
-    generated = neural_restore(model, photo, mask, device)
-    restored = cv2.addWeighted(generated, .65, photo, .35, 0)
-    restored = repair_scratches(restored, mask)
-    # Preserve black-and-white photographs rather than introducing unintended colors.
-    channel_difference = photo.max(axis=2).astype(float) - photo.min(axis=2)
-    if channel_difference.mean() < 3:
-        restored = cv2.cvtColor(cv2.cvtColor(restored, cv2.COLOR_RGB2GRAY), cv2.COLOR_GRAY2RGB)
-    return restored
+    return restore_automatic(model, photo, device)
 
 
 st.title("Restore your photographs")
@@ -70,7 +56,7 @@ if uploaded is not None:
         if not checkpoint.is_file():
             st.error("Restoration is unavailable right now. Please try again later.")
         else:
-            key = hashlib.sha256(original.tobytes() +
+            key = hashlib.sha256(b"automatic-v3" + original.tobytes() +
                                  str(checkpoint.stat().st_mtime_ns).encode()).hexdigest()
             result = st.session_state.get("restored_result")
             if result is None or result["key"] != key:

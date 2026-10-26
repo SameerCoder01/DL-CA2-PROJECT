@@ -8,35 +8,32 @@ The user screen is deliberately simple: **upload -> automatic restoration -> ori
 - A compact residual U-Net **Generator** restores damaged RGB + a damage mask.
 - A conditional **70x70 PatchGAN Discriminator** judges real clean and generated photos.
 - D loss = average binary cross-entropy for real=1 and fake=0.
-- G loss = adversarial binary cross-entropy + 100 x L1 reconstruction.
+- G loss = adversarial binary cross-entropy + 100 x (scratch-weighted L1 + 0.15 x edge L1). Scratch pixels receive 9x weight, normalized by total weight.
 - Training alternates one D update and one G update using Adam, ordinary backward() and step().
 - Float32 keeps the code explainable. No mixed precision, perceptual network or learning-rate scheduler.
 - Only G is used at inference. The compact Generator is a Pix2Pix-style adaptation, not the original eight-level architecture.
-- App output uses GAN restoration followed by OpenCV cleanup of the selected scratch mask. Evaluation reports GAN-only and this combined output separately. Three-epoch training alone does not reliably remove every thin scratch.
+- App output combines GAN tone/detail restoration with narrow-mask OpenCV interpolation. Fills use original local context plus GAN tone correction estimated only from intact pixels. The damaged input is never blended back into a selected scratch.
 
 Read [VIVA_GUIDE.md](VIVA_GUIDE.md) for the code explanation.
 
 ## Status
-The initial 3-epoch run and 3 additional epochs are complete (6 total). After a same-subset evaluation showed improvements, the local app was updated to the epoch-6 Generator at `runs/pix2pix/best.pt`. The previous checkpoint is preserved under `runs/pix2pix-backup-3`. See [VALIDATION.md](VALIDATION.md) for actual results and limits. Old supervised U-Net weights are rejected. A fresh checkout needs a trained checkpoint before restoration is available.
+Training reached epoch 10 by resuming the existing epoch-6 GAN for four additional epochs. Verified weights are active at `runs/pix2pix/best.pt`; resumable G/D and optimizer states are in `last.pt`. The epoch-6 run is backed up in `runs/pix2pix-backup-6-quality`. Automatic-mask evaluation on 100 validation crops gives PSNR 21.12 -> 21.14 dB, SSIM 0.801 -> 0.813, and scratch MAE 45.52 -> 36.26. Automatic GAN strength protects intact texture in photos with healthy contrast. Separate faded, scratched, damaged and B&W checks improved both average PSNR and SSIM in every category. These are synthetic validation results, not independent historical-photo evidence. See [VALIDATION.md](VALIDATION.md).
 
-Validation: eight local functional tests passed, including adversarial-only updates of both networks, checkpoint resume and Streamlit startup. These tests establish execution, not restoration quality.
+Validation: 10 local functional tests passed, plus actual side-panel upload, before/after and PNG download checks. Tests establish execution; exported photo comparisons establish the limited quality evidence.
 
 ## Run on Windows
 Keep the existing environment: GAN uses the same installed libraries. Only a fresh environment needs `setup.ps1`.
 
 ```powershell
-cd "$env:USERPROFILE\Downloads\DL-CA2-PROJECT"
-.\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe prepare_data.py --dataset
-.\.venv\Scripts\python.exe prepare_fast_data.py
-.\.venv\Scripts\python.exe model.py --epochs 3 --samples 800 --batch-size 4 --train-dir data/fast/train --val-dir data/fast/valid
-.\.venv\Scripts\python.exe evaluate.py
-.\.venv\Scripts\python.exe -m streamlit run App.py
+cd "C:\Users\samee\Documents\Codex\2026-10-26\5-old-photograph-restoration-application-restore-4\DL-CA2-PROJECT"
+& ..\work\python312\python.exe serve_here.py
+# Optional continuation (existing data is already prepared):
+& ..\work\python312\python.exe train_here.py --resume runs/pix2pix/last.pt --epochs 14 --samples 800 --batch-size 4 --train-dir data/fast/train --val-dir data/fast/valid --output runs/pix2pix-next --lr 0.0001
 ```
 
 If RTX 4050 6GB runs out of memory, use batch size 2 or 1. The 3-epoch run uses smaller clean copies for a quick classroom demo; it is not a fully converged model. A tiny execution smoke test can use `--epochs 1 --samples 32 --size 128 --batch-size 2 --output runs/gan-smoke`.
 
-Resume with `--resume runs/pix2pix/last.pt` and unchanged settings. Last checkpoint includes both networks and both optimizers; best checkpoint contains G selected by validation PSNR. Old `runs/restoration` output is preserved and is never used as GAN weights.
+Resume with `--resume runs/pix2pix/last.pt`; `--epochs` is the total target epoch, not the number of extra epochs. Both optimizers resume, then the requested learning rate is applied. Use a new output branch for changed training settings. Launchers reuse installed packages from the old Downloads environment, but import project code from this Documents folder. Old `runs/restoration` output is never used as GAN weights.
 
 ## Data, evaluation and limitations
 DIV2K supplies 800 training and 100 validation source images. Source splitting happens before cropping/corruption. Synthetic fading, noise, blur, JPEG artifacts and scratches create damaged/clean pairs. Data and weights are excluded from Git.

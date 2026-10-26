@@ -8,7 +8,8 @@ import torch
 from PIL import Image
 from streamlit.testing.v1 import AppTest
 from model import (ROOT, Pix2PixGenerator, PatchDiscriminator, gan_train_step, damage,
-                   neural_restore, classical_restore, repair_scratches, detect_scratches, metric_pair, load_restorer, train)
+                   neural_restore, classical_restore, repair_scratches, detect_scratches, metric_pair, load_restorer, train,
+                   restore_automatic)
 from prepare_data import safe_extract
 
 
@@ -122,3 +123,15 @@ def test_automatic_mask_finds_diagonal_scratches_and_white_spot():
     predicted = detect_scratches(photo,32)
     assert np.mean(predicted[truth > 0] > 0) > .85
     assert np.mean(predicted > 0) < .1
+
+
+def test_automatic_repair_does_not_blend_white_damage_back():
+    import cv2
+    torch.set_num_threads(2)
+    photo = np.full((96,96,3),120,np.uint8)
+    cv2.line(photo,(20,10),(70,85),(255,255,255),2)
+    # Zero-initialized residual head is identity: isolates actual repair stage.
+    result,mask = restore_automatic(Pix2PixGenerator(8).eval(),photo,return_mask=True)
+    assert mask.any()
+    assert np.abs(result[mask>0].astype(float)-120).mean() < 6
+    assert np.array_equal(result[:,:,0],result[:,:,1])
