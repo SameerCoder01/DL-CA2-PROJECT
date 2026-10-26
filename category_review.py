@@ -1,5 +1,6 @@
 """Separate faded, scratched, damaged and B&W checks using known references."""
 import json
+import argparse
 from pathlib import Path
 import cv2
 import numpy as np
@@ -9,10 +10,14 @@ from model import image_paths, read_rgb, load_restorer, restore_automatic, metri
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--checkpoint',default='runs/pix2pix/best.pt')
+    parser.add_argument('--output',default='outputs/category_review')
+    args = parser.parse_args()
     torch.set_num_threads(4)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    net, checkpoint = load_restorer('runs/pix2pix/best.pt',device)
-    out = Path('outputs/category_review')
+    net, checkpoint = load_restorer(args.checkpoint,device)
+    out = Path(args.output)
     out.mkdir(parents=True,exist_ok=True)
     rows = []
     for i,path in enumerate(image_paths('data/fast/valid')[::8]):

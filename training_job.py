@@ -29,18 +29,24 @@ def status(state, stage, error=None):
     temporary.replace(output/"job_status.json")
 
 
-try:
-    status("running", "training")
-    sys.argv[0] = str(project/"model.py")
-    runpy.run_path(str(project/"model.py"), run_name="__main__")
-    status("running", "evaluation")
-    config = json.loads((output/"config.json").read_text(encoding="utf-8"))
-    evaluation = project/"outputs"/("evaluation" if output.name == "pix2pix" else output.name+"_evaluation")
-    sys.argv = [str(project/"evaluate.py"), "--checkpoint", str(output/"best.pt"),
-                "--data", config["val_dir"], "--output", str(evaluation), "--limit", "20"]
-    runpy.run_path(str(project/"evaluate.py"), run_name="__main__")
-    status("completed", "training_and_evaluation")
-except BaseException as error:
-    status("failed", "training_or_evaluation", str(error))
-    traceback.print_exc()
-    raise
+def main():
+    # Importable model classes plus this guard allow Windows DataLoader workers.
+    import model
+    try:
+        status("running", "training")
+        model.main()
+        status("running", "evaluation")
+        config = json.loads((output/"config.json").read_text(encoding="utf-8"))
+        evaluation = project/"outputs"/("evaluation" if output.name == "pix2pix" else output.name+"_evaluation")
+        sys.argv = [str(project/"evaluate.py"), "--checkpoint", str(output/"best.pt"),
+                    "--data", config["val_dir"], "--output", str(evaluation), "--limit", "20"]
+        runpy.run_path(str(project/"evaluate.py"), run_name="__main__")
+        status("completed", "training_and_evaluation")
+    except BaseException as error:
+        status("failed", "training_or_evaluation", str(error))
+        traceback.print_exc()
+        raise
+
+
+if __name__ == "__main__":
+    main()

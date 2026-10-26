@@ -2,7 +2,6 @@
 
 This imports existing packages; it does not install or download anything.
 """
-import runpy
 import sys
 from pathlib import Path
 
@@ -11,4 +10,6 @@ packages = Path.home()/"Downloads/DL-CA2-PROJECT/.venv/Lib/site-packages"
 if packages.is_dir():
     sys.path.insert(0, str(packages))
 sys.path.insert(0, str(project))
-runpy.run_path(str(project/"model.py"), run_name="__main__")
+if __name__ == "__main__":
+    import model
+    model.main()

@@ -17,9 +17,9 @@ The user screen is deliberately simple: **upload -> automatic restoration -> ori
 Read [VIVA_GUIDE.md](VIVA_GUIDE.md) for the code explanation.
 
 ## Status
-Training reached epoch 10 by resuming the existing epoch-6 GAN for four additional epochs. Verified weights are active at `runs/pix2pix/best.pt`; resumable G/D and optimizer states are in `last.pt`. The epoch-6 run is backed up in `runs/pix2pix-backup-6-quality`. Automatic-mask evaluation on 100 validation crops gives PSNR 21.12 -> 21.14 dB, SSIM 0.801 -> 0.813, and scratch MAE 45.52 -> 36.26. Automatic GAN strength protects intact texture in photos with healthy contrast. Separate faded, scratched, damaged and B&W checks improved both average PSNR and SSIM in every category. These are synthetic validation results, not independent historical-photo evidence. See [VALIDATION.md](VALIDATION.md).
+Training reached **epoch 40** after 30 extra epochs on all 800 original HR training sources using the RTX 4050. Each source contributes a random 256×256 crop per epoch; 100 validation sources remain outside training. Epoch-40 best and resumable G/D state are active in `runs/pix2pix`; epoch 10 is backed up in `runs/pix2pix-backup-10-long`. Matched automatic-mask HR validation improved G PSNR 22.67 -> 25.81 dB and SSIM 0.8615 -> 0.8944. New grey-crease evaluation reduced scratch MAE 19%; separate category scores improved. Legacy mixed-damage PSNR is unchanged and SSIM slightly lower. See [TRAINING_REPORT.md](TRAINING_REPORT.md) for exact comparisons and limits.
 
-Validation: 11 local functional tests passed, plus actual side-panel upload, before/after and PNG download checks. A real uploaded monochrome portrait exposed missed faded-grey scratches; a local-contrast fallback now removes its major right-side creases. Small spots and border damage remain. Tests establish execution; exported photo comparisons establish the limited quality evidence.
+Validation: 12 local functional tests pass, plus actual side-panel before/after and exact PNG download checks. A real monochrome portrait exposed missed faded-grey scratches; the local-contrast fallback removes major right-side creases, while small spots and border damage remain. Tests establish execution; exported photo comparisons establish the limited quality evidence.
 
 ## Run on Windows
 Keep the existing environment: GAN uses the same installed libraries. Only a fresh environment needs `setup.ps1`.
@@ -28,7 +28,7 @@ Keep the existing environment: GAN uses the same installed libraries. Only a fre
 cd "C:\Users\samee\Documents\Codex\2026-10-26\5-old-photograph-restoration-application-restore-4\DL-CA2-PROJECT"
 & ..\work\python312\python.exe serve_here.py
 # Optional continuation (existing data is already prepared):
-& ..\work\python312\python.exe train_here.py --resume runs/pix2pix/last.pt --epochs 14 --samples 800 --batch-size 4 --train-dir data/fast/train --val-dir data/fast/valid --output runs/pix2pix-next --lr 0.0001
+& ..\work\python312\python.exe training_job.py --resume runs/pix2pix/last.pt --epochs 60 --samples 800 --batch-size 4 --workers 2 --train-dir data/DIV2K_train_HR --val-dir data/DIV2K_valid_HR --output runs/pix2pix-next --lr 0.0001 --realistic-damage --automatic-mask-prob 0.75 --automatic-validation
 ```
 
 If RTX 4050 6GB runs out of memory, use batch size 2 or 1. The 3-epoch run uses smaller clean copies for a quick classroom demo; it is not a fully converged model. A tiny execution smoke test can use `--epochs 1 --samples 32 --size 128 --batch-size 2 --output runs/gan-smoke`.

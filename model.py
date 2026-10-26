@@ -100,6 +100,47 @@ def detect_faded_scratches(image: np.ndarray) -> np.ndarray:
     return cv2.dilate(selected,np.ones((3,3),np.uint8))
 
 
+def realistic_damage(clean: np.ndarray, seed: int) -> tuple[np.ndarray,np.ndarray]:
+    """Mixed training curriculum: intact, fade-only, scratches-only, and combined.
+
+    Creases are bent, partly transparent and grey as well as white/dark. This
+    reduces the gap between pure-white synthetic lines and faded scanned prints.
+    The clean reference is never changed, including for monochrome pairs.
+    """
+    rng = np.random.default_rng(seed)
+    h,w = clean.shape[:2]
+    profile = rng.random()
+    mask = np.zeros((h,w),np.uint8)
+    if profile < .15:
+        return clean.copy(),mask
+    x = clean.astype(np.float32)
+    if profile >= .35:
+        x = x*rng.uniform(.55,.95)+rng.uniform(8,48)
+        if rng.random() < .4:
+            x = cv2.GaussianBlur(x,(3,3),float(rng.uniform(.2,.7)))
+        x += rng.normal(0,rng.uniform(.5,4),x.shape)
+    if profile < .35 or profile >= .55:
+        for _ in range(int(rng.integers(2,12))):
+            line = np.zeros((h,w),np.uint8)
+            start = rng.integers([0,0],[w,h])
+            end = np.clip(start+rng.integers([-w//3,-h//2],[w//3+1,h//2+1]),[0,0],[w-1,h-1])
+            middle = np.clip((start+end)//2+rng.integers(-8,9,2),[0,0],[w-1,h-1])
+            points = np.array([start,middle,end],np.int32)
+            cv2.polylines(line,[points],False,255,int(rng.integers(1,4)))
+            opacity = float(rng.uniform(.45,1.))
+            value = float(rng.uniform(145,255) if rng.random()<.8 else rng.uniform(5,70))
+            selected = line>0
+            x[selected] = (1-opacity)*x[selected]+opacity*value
+            mask = cv2.bitwise_or(mask,line)
+        if rng.random() < .4:
+            spot = np.zeros_like(mask)
+            cv2.circle(spot,(int(rng.integers(w)),int(rng.integers(h))),
+                       int(rng.integers(2,max(3,min(h,w)//24))),255,-1)
+            x[spot>0] = rng.uniform(170,250)
+            mask = cv2.bitwise_or(mask,spot)
+    return np.uint8(np.clip(x,0,255)),mask
+
+
 def detect_scratches(image: np.ndarray, sensitivity: int = 22) -> np.ndarray:
     """Conservative automatic proposal: thin straight scratches and bright spots.
 
@@ -255,7 +296,7 @@ class PatchDiscriminator(nn.Module):
 
 
 def gan_train_step(generator, discriminator, optimizer_g, optimizer_d, inp, target,
-                   lambda_l1=100.):
+                   lambda_l1=100., damage_mask=None):
     """Viva flow: create fake -> train D -> train G. Ordinary float32 PyTorch."""
     # 1. Generator tries to turn the damaged photograph into a clean photograph.
     fake = generator(inp)
@@ -282,7 +323,7 @@ def gan_train_step(generator, discriminator, optimizer_g, optimizer_d, inp, targ
         adversarial = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits))
         # Scratches occupy few pixels: ordinary global L1 rewards leaving them.
         # Give damaged pixels nine times the weight, normalized by total weight.
-        weights = 1 + 8 * inp[:, 3:4]
+        weights = 1 + 8 * (inp[:,3:4] if damage_mask is None else damage_mask)
         reconstruction = ((fake-target).abs()*weights).sum() / (3*weights.sum())
         # Preserve edges instead of reducing all uncertain detail to smooth fills.
         edge = .5 * (F.l1_loss(fake[:,:,:,1:]-fake[:,:,:,:-1], target[:,:,:,1:]-target[:,:,:,:-1]) +
@@ -303,9 +344,11 @@ def tensor(image: np.ndarray) -> torch.Tensor:
 
 
 class PhotoPairs(Dataset):
-    def __init__(self, paths, size=256, samples=None, validation=False):
+    def __init__(self, paths, size=256, samples=None, validation=False, realistic=False, automatic_mask_prob=.25):
         self.paths, self.size = paths, size
         self.samples, self.validation = samples or len(paths), validation
+        self.realistic = realistic
+        self.automatic_mask_prob = automatic_mask_prob
 
     def __len__(self):
         return self.samples
@@ -328,11 +371,14 @@ class PhotoPairs(Dataset):
         # B&W restoration is paired B&W -> B&W, never forced colorization.
         if rng.random() < .3:
             clean = cv2.cvtColor(cv2.cvtColor(clean,cv2.COLOR_RGB2GRAY),cv2.COLOR_GRAY2RGB)
-        degraded, mask = damage(clean, rng.randrange(2**31))
+        corrupt = realistic_damage if self.realistic else damage
+        degraded, mask = corrupt(clean, rng.randrange(2**31))
+        true_mask = torch.from_numpy(mask.copy()).unsqueeze(0).float()/255
         # Expose G to automatic-mask misses as well as exact synthetic masks.
-        if not self.validation and rng.random() < .25:
+        if not self.validation and rng.random() < self.automatic_mask_prob:
             mask = detect_scratches(degraded,32)
-        return torch.cat([tensor(degraded), torch.from_numpy(mask.copy()).unsqueeze(0).float()/255]), tensor(clean)
+        pair = (torch.cat([tensor(degraded), torch.from_numpy(mask.copy()).unsqueeze(0).float()/255]), tensor(clean))
+        return (*pair,true_mask) if self.realistic else pair
 
 
 def metric_pair(pred, target):
@@ -343,10 +389,16 @@ def metric_pair(pred, target):
 
 
 @torch.inference_mode()
-def validate(net, loader, device):
+def validate(net, loader, device, automatic=False):
     net.eval()
     rows = []
-    for inp, target in loader:
+    for batch in loader:
+        inp,target = batch[:2]
+        if automatic:
+            inp = inp.clone()
+            for index,source in enumerate(inp):
+                photo = np.uint8(source[:3].permute(1,2,0).numpy().clip(0,1)*255)
+                inp[index,3] = torch.from_numpy(detect_scratches(photo,32)).float()/255
         pred = net(inp.to(device)).cpu()
         for p, t, source in zip(pred, target, inp):
             arrays = [np.uint8(v.permute(1, 2, 0).numpy().clip(0, 1)*255) for v in [p, t, source[:3]]]
@@ -371,10 +423,16 @@ def train(args):
         raise ValueError("Training and validation sets must be disjoint.")
     if len({p.name for p in train_files} & {p.name for p in val_files}) > 0:
         raise ValueError("Duplicate filenames across splits: check for leakage.")
-    train_set = PhotoPairs(train_files, args.size, args.samples)
-    val_set = PhotoPairs(val_files, args.size, validation=True)
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
-    val_loader = DataLoader(val_set, batch_size=1, num_workers=args.workers)
+    realistic = getattr(args,"realistic_damage",False)
+    mask_probability = getattr(args,"automatic_mask_prob",.25)
+    automatic_validation = getattr(args,"automatic_validation",False)
+    train_set = PhotoPairs(train_files, args.size, args.samples, realistic=realistic,
+                           automatic_mask_prob=mask_probability)
+    val_set = PhotoPairs(val_files, args.size, validation=True, realistic=realistic)
+    loader_options = {"num_workers":args.workers,"persistent_workers":args.workers>0,
+                      "pin_memory":device.type=="cuda"}
+    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, **loader_options)
+    val_loader = DataLoader(val_set, batch_size=1, **loader_options)
     net = Pix2PixGenerator().to(device)
     discriminator = PatchDiscriminator().to(device)
     optimizer = torch.optim.Adam(net.parameters(), lr=args.lr, betas=(.5, .999))
@@ -403,23 +461,31 @@ def train(args):
     (out/"config.json").write_text(json.dumps(vars(args), indent=2), encoding="utf-8")
     (out/"split.json").write_text(json.dumps({"train": [str(p) for p in train_files],
         "validation": [str(p) for p in val_files]}, indent=2), encoding="utf-8")
+    if not (out/"starting_metrics.json").exists():
+        starting = validate(net,val_loader,device,automatic_validation)
+        (out/"starting_metrics.json").write_text(json.dumps(starting,indent=2),encoding="utf-8")
+        print("Starting checkpoint on this exact validation curriculum: "+json.dumps(starting),flush=True)
+    # Preserve the exact training implementation alongside checkpoints.
+    (out/"training_source.py").write_text(Path(__file__).read_text(encoding="utf-8"),encoding="utf-8")
     print(f"Device: {device}; {len(train_files)} train / {len(val_files)} validation images", flush=True)
     for epoch in range(start, args.epochs):
         net.train()
         discriminator.train()
         total = dict.fromkeys(["g_loss", "d_loss", "g_adversarial", "reconstruction"], 0.)
         seen = 0
-        for step, (inp, target) in enumerate(train_loader):
+        for step, batch in enumerate(train_loader):
+            inp,target = batch[:2]
+            truth = batch[2].to(device) if len(batch)>2 else None
             inp, target = inp.to(device), target.to(device)
             losses = gan_train_step(net, discriminator, optimizer, optimizer_d, inp, target,
-                                    args.lambda_l1)
+                                    args.lambda_l1,truth)
             for name, value in losses.items():
                 total[name] += value * len(inp)
             seen += len(inp)
             if step % 25 == 0:
                 print(f"GAN epoch {epoch+1}/{args.epochs}, batch {step+1}/{len(train_loader)}, "
                       f"G {losses['g_loss']:.4f}, D {losses['d_loss']:.4f}", flush=True)
-        metrics = validate(net, val_loader, device)
+        metrics = validate(net, val_loader, device,automatic_validation)
         improved = metrics["psnr"] > best
         best, stale = max(best, metrics["psnr"]), 0 if improved else stale+1
         row = {"epoch": epoch+1, **{k:v/seen for k,v in total.items()}, **metrics}
@@ -495,7 +561,7 @@ def colorize(image, directory):
     return np.uint8(np.clip(out,0,1)*255)
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train-dir", default=str(ROOT/"data/DIV2K_train_HR"))
     parser.add_argument("--val-dir", default=str(ROOT/"data/DIV2K_valid_HR"))
@@ -510,7 +576,14 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--patience", type=int, default=12)
     parser.add_argument("--resume")
+    parser.add_argument("--realistic-damage",action="store_true",help="Use diverse faded/grey/bent creases and intact examples")
+    parser.add_argument("--automatic-mask-prob",type=float,default=.25)
+    parser.add_argument("--automatic-validation",action="store_true",help="Select G using predicted masks, matching deployment")
     args = parser.parse_args()
-    if args.lambda_l1 < 0 or args.size < 32 or args.size % 8 or min(args.epochs,args.samples,args.batch_size,args.patience) < 1:
+    if not 0 <= args.automatic_mask_prob <= 1 or args.lambda_l1 < 0 or args.size < 32 or args.size % 8 or min(args.epochs,args.samples,args.batch_size,args.patience) < 1:
         parser.error("size must be >=32 and divisible by 8; training counts must be positive")
     train(args)
+
+
+if __name__ == "__main__":
+    main()

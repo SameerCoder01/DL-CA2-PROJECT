@@ -33,6 +33,7 @@ def main():
     parser.add_argument('--old',action='store_true')
     parser.add_argument('--limit',type=int,default=20)
     parser.add_argument('--start',type=int,default=0)
+    parser.add_argument('--realistic',action='store_true')
     args = parser.parse_args()
     torch.set_num_threads(4)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -52,7 +53,8 @@ def main():
         image = image[(h-256)//2:(h-256)//2+256,(w-256)//2:(w-256)//2+256]
         if i % 3 == 0:
             image = cv2.cvtColor(cv2.cvtColor(image,cv2.COLOR_RGB2GRAY),cv2.COLOR_GRAY2RGB)
-        photo, truth = model.damage(image, 191000+i)
+        corrupt = model.realistic_damage if args.realistic else model.damage
+        photo, truth = corrupt(image, 191000+i)
         cases.append((path.stem,photo,image,truth))
     demo = Path('outputs/demo_test/input_photograph.png')
     if demo.exists():
@@ -61,11 +63,12 @@ def main():
         result, mask = old_pipeline(net,photo,device,module) if args.old else model.restore_automatic(net,photo,device,return_mask=True)
         row = {'name':name,'mask_fraction':float(np.mean(mask>0))}
         if clean is not None:
+            row['intact_input'] = bool(np.array_equal(photo,clean))
             for label,pred in [('input',photo),('restored',result)]:
                 psnr,ssim = model.metric_pair(pred,clean)
                 row.update({label+'_psnr':psnr,label+'_ssim':ssim})
-            row['scratch_mae'] = float(np.abs(result.astype(float)-clean)[truth>0].mean())
-            row['mask_recall'] = float(np.mean(mask[truth>0]>0))
+            row['scratch_mae'] = float(np.abs(result.astype(float)-clean)[truth>0].mean()) if truth.any() else None
+            row['mask_recall'] = float(np.mean(mask[truth>0]>0)) if truth.any() else None
             row['mask_precision'] = float(np.mean(truth[mask>0]>0)) if mask.any() else 0.
         rows.append(row)
         Image.fromarray(result).save(out/(name+'_restored.png'))
@@ -80,9 +83,17 @@ def main():
             canvas.save(out/(name+'_comparison.png'))
             Image.fromarray(mask).save(out/(name+'_mask.png'))
     measured = [r for r in rows if 'restored_psnr' in r]
-    means = {key:float(np.mean([r[key] for r in measured])) for key in measured[0] if key != 'name'}
+    keys = [key for key in measured[0] if key not in {'name','intact_input'}]
+    def averages(subset):
+        return {key:float(np.mean(values)) if values else None for key in keys
+                for values in [[r[key] for r in subset if r[key] is not None]]}
+    means = averages(measured)
     report = {'checkpoint':args.checkpoint,'epoch':checkpoint['epoch'],'means':means,'rows':rows,
-              'scope':f'{len(measured)} validation sources from index {args.start}, new fixed synthetic damage, automatic masks; grayscale subset. Not real historical-photo ground truth.'}
+              'by_input_type':{label:{'count':len(subset),'means':averages(subset)}
+                               for label in ['damaged','intact']
+                               for subset in [[r for r in measured if r['intact_input'] == (label=='intact')]]},
+              'realistic':args.realistic,
+              'scope':f'{len(measured)} validation sources from index {args.start}, fixed synthetic damage, automatic masks; grayscale subset. Not real historical-photo ground truth. Scratch MAE/recall exclude undamaged examples.'}
     (out/'metrics.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
     print(json.dumps(means,indent=2),flush=True)
 

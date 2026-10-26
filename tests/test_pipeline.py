@@ -9,7 +9,7 @@ from PIL import Image
 from streamlit.testing.v1 import AppTest
 from model import (ROOT, Pix2PixGenerator, PatchDiscriminator, gan_train_step, damage,
                    neural_restore, classical_restore, repair_scratches, detect_scratches, metric_pair, load_restorer, train,
-                   restore_automatic)
+                   restore_automatic, PhotoPairs)
 from prepare_data import safe_extract
 
 
@@ -147,3 +147,16 @@ def test_faded_gray_crease_is_found_without_selecting_short_facial_highlight():
     mask = detect_scratches(photo,32)
     assert np.mean(mask[truth>0]>0) > .9
     assert not mask[135:146,94:127].any()
+
+
+def test_realistic_training_keeps_true_damage_when_detector_misses(tmp_path,monkeypatch):
+    import model
+    path = tmp_path/'training.png'
+    Image.fromarray(np.full((64,64,3),110,np.uint8)).save(path)
+    monkeypatch.setattr(model,'detect_scratches',lambda image,*args:np.zeros(image.shape[:2],np.uint8))
+    pairs = PhotoPairs([path],size=64,realistic=True,automatic_mask_prob=1.)
+    examples = [pairs[index] for index in range(12)]
+    assert any(truth.any() for _,_,truth in examples)
+    assert all(not condition[3].any() for condition,_,_ in examples)
+    assert all(target.shape==(3,64,64) and truth.shape==(1,64,64)
+               for _,target,truth in examples)

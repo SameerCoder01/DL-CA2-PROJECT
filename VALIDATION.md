@@ -1,5 +1,11 @@
 # Validation - 26 October 2026
 
+## Current active model: epoch 40
+
+Thirty additional full-source epochs on RTX 4050 are complete: all 800 original HR training photos per epoch, one random 256×256 crop each; 100 validation photos excluded from training. Diverse faded-grey crease training and automatic-mask fine-tuning are detailed in [TRAINING_REPORT.md](TRAINING_REPORT.md). Matched HR automatic-mask validation improved epoch-10 → epoch-40 G PSNR 22.6726 → 25.8097 and SSIM 0.861454 → 0.894448. On 88 damaged crops of a new fixed corruption evaluation, app PSNR improved 22.3235 → 22.6212, SSIM 0.881775 → 0.883969, and crease-region MAE decreased 69.4480 → 56.2307. Legacy mixed PSNR is essentially unchanged; legacy SSIM slightly regressed. All four separate category averages improved. These are validation results, not independent test evidence.
+
+Epoch-40 best and last are active; epoch 10 is backed up at `runs/pix2pix-backup-10-long`. The visible side-panel app restored the existing portrait with epoch 40, and its downloaded PNG exactly matched the evaluated result. Small spots and border damage remain. Twelve functional tests cover the earlier behavior plus separate true-damage supervision when an estimated mask misses all damage. Sections below record earlier stages and their historical metrics.
+
 ## Real uploaded portrait: faded-grey scratch detection fix
 
 The user's `images.jpg` portrait exposed a real failure: the automatic mask covered 0% of the image, leaving the prominent right-side diagonal and vertical creases untouched. Absolute bright/dark thresholds did not cover faded-grey damage in this scan. A monochrome-only fallback now selects elongated local-contrast ridges when the original detector selects less than 0.5% of the image. Short interior highlights are excluded to avoid selecting features such as the mouth. Border-connected damage can use a shorter length threshold.
