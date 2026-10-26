@@ -5,6 +5,8 @@ if (-not (Test-Path '.venv\Scripts\python.exe')) { throw 'Run .\setup.ps1 first.
 if ($LASTEXITCODE -ne 0) { throw 'Dataset/model downloads failed.' }
 & .\.venv\Scripts\python.exe prepare_data.py --colorization
 if ($LASTEXITCODE -ne 0) { Write-Warning 'Optional colorization assets could not be downloaded. Restoration training will continue.' }
-& .\.venv\Scripts\python.exe model.py --epochs 60 --batch-size 4
+& .\.venv\Scripts\python.exe prepare_fast_data.py
+if ($LASTEXITCODE -ne 0) { throw 'Fast data preparation failed.' }
+& .\.venv\Scripts\python.exe model.py --epochs 3 --samples 800 --batch-size 4 --train-dir data/fast/train --val-dir data/fast/valid
 if ($LASTEXITCODE -ne 0) { throw 'Training failed; inspect the error before retrying.' }
-& .\.venv\Scripts\python.exe evaluate.py
+& .\.venv\Scripts\python.exe evaluate.py --data data/fast/valid --limit 20

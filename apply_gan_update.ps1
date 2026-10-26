@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $taskSource = $PSScriptRoot
 $taskDestination = Join-Path $env:USERPROFILE 'Downloads\DL-CA2-PROJECT'
 $taskExpectedHead = '503a06d1b76b3c93a89869388ee694bec02d83a7'
-$taskFiles = @('App.py','model.py','evaluate.py','prepare_data.py','README.md','VIVA_GUIDE.md','VALIDATION.md',
+$taskFiles = @('App.py','model.py','evaluate.py','prepare_data.py','prepare_fast_data.py','train.ps1','README.md','VIVA_GUIDE.md','VALIDATION.md',
     'tests\test_pipeline.py','notebooks\Train_on_Colab.ipynb','bootstrap_downloads.ps1',
     'apply_gan_update.ps1')
 
@@ -57,9 +57,11 @@ if ($LASTEXITCODE -ne 0) { throw 'CUDA verification failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Dataset download failed. The code update is already saved.' }
 & $taskPython prepare_data.py --colorization
 if ($LASTEXITCODE -ne 0) { Write-Warning 'Optional colorization assets unavailable. GAN restoration training will continue.' }
-& $taskPython model.py --epochs 60 --samples 4000 --batch-size 4
+& $taskPython prepare_fast_data.py
+if ($LASTEXITCODE -ne 0) { throw 'Fast data preparation failed.' }
+& $taskPython model.py --epochs 3 --samples 800 --batch-size 4 --train-dir data/fast/train --val-dir data/fast/valid
 if ($LASTEXITCODE -ne 0) { throw 'GAN training stopped. Read the error above; existing checkpoints are preserved.' }
-& $taskPython evaluate.py
+& $taskPython evaluate.py --data data/fast/valid --limit 20
 if ($LASTEXITCODE -ne 0) { throw 'Evaluation failed. Training checkpoints are preserved.' }
 Write-Host 'GAN training and evaluation complete. Starting the Streamlit app.'
 & $taskPython -m streamlit run App.py

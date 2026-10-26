@@ -30,7 +30,8 @@ try:
     sys.argv[0] = str(project/"model.py")
     runpy.run_path(str(project/"model.py"), run_name="__main__")
     status("running", "evaluation")
-    sys.argv = [str(project/"evaluate.py")]
+    config = json.loads((output/"config.json").read_text(encoding="utf-8"))
+    sys.argv = [str(project/"evaluate.py"), "--data", config["val_dir"], "--limit", "20"]
     runpy.run_path(str(project/"evaluate.py"), run_name="__main__")
     status("completed", "training_and_evaluation")
 except BaseException as error:

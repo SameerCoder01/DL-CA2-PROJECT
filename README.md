@@ -25,12 +25,13 @@ Keep the existing environment: GAN uses the same installed libraries. Only a fre
 cd "$env:USERPROFILE\Downloads\DL-CA2-PROJECT"
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe prepare_data.py --dataset
-.\.venv\Scripts\python.exe model.py --epochs 60 --samples 4000 --batch-size 4
+.\.venv\Scripts\python.exe prepare_fast_data.py
+.\.venv\Scripts\python.exe model.py --epochs 3 --samples 800 --batch-size 4 --train-dir data/fast/train --val-dir data/fast/valid
 .\.venv\Scripts\python.exe evaluate.py
 .\.venv\Scripts\python.exe -m streamlit run App.py
 ```
 
-If RTX 4050 6GB runs out of memory, use batch size 2 or 1. Runtime must be measured; 60 epochs is a starting configuration, not a quality guarantee. A short smoke run can use `--epochs 1 --samples 32 --size 128 --batch-size 2 --output runs/gan-smoke`.
+If RTX 4050 6GB runs out of memory, use batch size 2 or 1. The 3-epoch run uses smaller clean copies for a quick classroom demo; it is not a fully converged model. A tiny execution smoke test can use `--epochs 1 --samples 32 --size 128 --batch-size 2 --output runs/gan-smoke`.
 
 Resume with `--resume runs/pix2pix/last.pt` and unchanged settings. Last checkpoint includes both networks and both optimizers; best checkpoint contains G selected by validation PSNR. Old `runs/restoration` output is preserved and is never used as GAN weights.
 

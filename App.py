@@ -174,7 +174,9 @@ with training:
             st.caption("Metrics use fixed synthetic corruption on held-out source photos. They do not prove performance on real historical damage.")
     else:
         st.info("No completed training epochs found. No training metrics or quality claims are available yet.")
-    st.code("python prepare_data.py --dataset\npython model.py --epochs 60 --batch-size 4\npython evaluate.py", language="bash")
+    st.code("python prepare_data.py --dataset\npython prepare_fast_data.py\n"
+            "python model.py --epochs 3 --samples 800 --batch-size 4 "
+            "--train-dir data/fast/train --val-dir data/fast/valid", language="bash")
     st.write("Pix2Pix GAN training uses a U-Net Generator and a conditional PatchGAN Discriminator. "
              "G loss = adversarial loss + 100 x L1 loss. D learns real versus generated image patches. "
              "Both networks use ordinary float32 PyTorch and Adam; only the Generator runs during restoration.")
