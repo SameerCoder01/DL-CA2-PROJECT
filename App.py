@@ -13,7 +13,7 @@ import torch
 from model import ROOT, read_rgb, png_bytes, load_restorer, restore_automatic
 from learned_repair import available as learned_available
 
-st.set_page_config(page_title="Reframe | Photo Restoration", page_icon="✦",
+st.set_page_config(page_title="Reframe | Photo Scratch Repair", page_icon="✦",
                    layout="centered", initial_sidebar_state="collapsed")
 st.markdown("""
 <style>
@@ -119,20 +119,20 @@ def restore_photo(photo, checkpoint):
 st.markdown('''
 <div class="brandbar"><div class="brand"><span class="brand-icon">✦</span> REFRAME</div>
 <div class="private"><i></i> Private by design</div></div>
-<div class="eyebrow">A LITTLE CARE. A SECOND LIFE.</div>
+<div class="eyebrow">OLD PHOTOS. FEWER SCRATCHES.</div>
 ''', unsafe_allow_html=True)
-st.title("Restore your photographs")
+st.title("Restore scratched photographs")
 st.markdown('''
-<p class="intro">Some moments deserve another look. Give your old photographs a little care, and keep the memories close.</p>
-<div class="capabilities"><span><b>✧</b> Scratch repair</span><span><b>◐</b> Faded photo care</span><span><b>◈</b> Black &amp; white restoration</span></div>
+<p class="intro">Upload a scratched photograph. Automatically repair detected scratches, compare the before and after, and save your restored photo.</p>
+<div class="capabilities"><span><b>✧</b> Automatic scratch repair</span><span><b>◐</b> Before &amp; after</span><span><b>↧</b> PNG download</span></div>
 <div class="journey"><div class="step active"><span class="number">1</span> Upload</div><span class="connector"></span>
-<div class="step"><span class="number">2</span> Auto restore</div><span class="connector"></span>
+<div class="step"><span class="number">2</span> Repair scratches</div><span class="connector"></span>
 <div class="step"><span class="number">3</span> Keep forever</div></div>
 ''', unsafe_allow_html=True)
 with st.container(key="upload_panel"):
     st.markdown('''<div class="panel-heading"><span class="panel-symbol">↥</span><div>
-    <div class="panel-title">Your next restored memory starts here</div>
-    <div class="panel-subtitle">Choose a photo. We’ll take care of the rest.</div></div></div>''', unsafe_allow_html=True)
+    <div class="panel-title">Give your scratched photo a fresh start</div>
+    <div class="panel-subtitle">Choose a scratched photo. Repair starts automatically.</div></div></div>''', unsafe_allow_html=True)
     uploaded = st.file_uploader("Choose a photograph", type=["jpg", "jpeg", "png", "webp", "tif", "tiff"], label_visibility="collapsed")
     st.markdown('<div class="upload-note"><span>JPG · PNG · WEBP · TIFF &nbsp; / &nbsp; Up to 20 MB</span><span>Processed on your device</span></div>', unsafe_allow_html=True)
 checkpoint = ROOT / "runs/pix2pix/best.pt"
@@ -149,12 +149,12 @@ if uploaded is not None:
             key = hashlib.sha256(revision.encode() + original.tobytes() + weight_stamp.encode()).hexdigest()
             result = st.session_state.get("restored_result")
             if result is None or result["key"] != key:
-                with st.spinner("Restoring your photograph..."):
+                with st.spinner("Detecting and repairing scratches..."):
                     restored = restore_photo(original, checkpoint)
                 result = {"key": key, "image": restored, "png": png_bytes(restored)}
                 st.session_state["restored_result"] = result
 
-            st.markdown('<div class="result-heading"><h2>A fresh look at your memory.</h2><span class="ready">✓ Restoration complete</span></div>', unsafe_allow_html=True)
+            st.markdown('<div class="result-heading"><h2>Your scratch-repair result.</h2><span class="ready">✓ Repair complete</span></div>', unsafe_allow_html=True)
             st.markdown(f'<div class="filename">{html.escape(Path(uploaded.name).name)} · {original.shape[1]} × {original.shape[0]} px</div>', unsafe_allow_html=True)
             left, right = st.columns(2, gap="small")
             with left:
@@ -174,9 +174,9 @@ if uploaded is not None:
         st.error("This photo could not be restored. Please try another JPG or PNG image.")
 
 else:
-    st.markdown('''<div class="empty-note"><div class="spark">✧</div><strong>A little worn. Still worth keeping.</strong>
-    <p>Your original and restored photographs will appear here, side by side.<br>No adjustments needed. Just bring a memory.</p></div>''', unsafe_allow_html=True)
+    st.markdown('''<div class="empty-note"><div class="spark">✧</div><strong>Scratches fade. Memories stay.</strong>
+    <p>Your original and repaired photographs will appear here, side by side.<br>Upload a scratched photo to get started.</p></div>''', unsafe_allow_html=True)
 
-st.markdown('''<div class="footer"><span class="signature">REFRAME &nbsp; / &nbsp; Made for memories.</span>
+st.markdown('''<div class="footer"><span class="signature">REFRAME &nbsp; / &nbsp; Photo scratch repair.</span>
 <span>Local processing &nbsp;·&nbsp; Your original stays yours.</span></div>''', unsafe_allow_html=True)
 

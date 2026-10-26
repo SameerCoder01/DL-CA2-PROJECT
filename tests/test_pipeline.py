@@ -57,7 +57,7 @@ def test_archive_cannot_escape(tmp_path):
 def test_frontend_starts():
     app = AppTest.from_file(str(ROOT/"App.py")).run(timeout=30)
     assert not app.exception
-    assert app.title[0].value == "Restore your photographs"
+    assert app.title[0].value == "Restore scratched photographs"
     assert not app.selectbox and not app.slider and not app.toggle
 
 
