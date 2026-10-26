@@ -1,5 +1,13 @@
 # Validation - 26 October 2026
 
+## Final accepted learned-repair pipeline
+
+The user accepted the portrait produced by the pretrained Microsoft scratch detector (threshold 0.4) and LaMa inpainting. The main-directory app now selects that processing for normal-contrast monochrome images; color images also receive conservative geometric scratch proposals, and low-contrast images may receive tone correction from the existing local epoch-40 Pix2Pix. The detector and LaMa are pretrained imports, not new locally trained models. LaMa's original training uses adversarial/GAN losses. No GFPGAN enhancement is enabled.
+
+Actual portrait and penguin outputs were visually inspected. LaMa fills remove additional facial peeling/marks and reduce obvious smear in the penguin's repaired regions compared with the previous baseline. Some fine texture/blemishes remain; no clean reference for the real portrait exists. Earlier 20-image experiments under `outputs/learned_backend_*` used a different candidate threshold/refinement and are not claimed as final-pipeline benchmark scores. The selected parameters preserve the result the user accepted instead of maximizing a proxy score.
+
+The planned full CelebA training job never started. A discarded 64-image timing probe produced no saved/deployed checkpoint. The user canceled the dataset; 6.443 GB of downloaded/extracted CelebA files were removed from project paths to Recycle Bin after permanent-delete commands were blocked by automatic approval review. That is not a claim that disk space has been reclaimed: the corresponding Recycle Bin entries still need permanent removal by the user. Original DIV2K data and useful model files are preserved. Full training history below remains valid historical evidence for the local Pix2Pix baseline.
+
 ## Current active model: epoch 40
 
 Thirty additional full-source epochs on RTX 4050 are complete: all 800 original HR training photos per epoch, one random 256×256 crop each; 100 validation photos excluded from training. Diverse faded-grey crease training and automatic-mask fine-tuning are detailed in [TRAINING_REPORT.md](TRAINING_REPORT.md). Matched HR automatic-mask validation improved epoch-10 → epoch-40 G PSNR 22.6726 → 25.8097 and SSIM 0.861454 → 0.894448. On 88 damaged crops of a new fixed corruption evaluation, app PSNR improved 22.3235 → 22.6212, SSIM 0.881775 → 0.883969, and crease-region MAE decreased 69.4480 → 56.2307. Legacy mixed PSNR is essentially unchanged; legacy SSIM slightly regressed. All four separate category averages improved. These are validation results, not independent test evidence.

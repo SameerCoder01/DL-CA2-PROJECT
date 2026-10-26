@@ -2,6 +2,12 @@
 
 Streamlit frontend: `App.py`. PyTorch Generator, Discriminator and training: `model.py`.
 
+## Final selected repair backend
+
+The accepted portrait result uses **pretrained learned scratch detection + LaMa GAN inpainting**. The locally trained epoch-40 Pix2Pix remains available for low-contrast tone correction and as the previous baseline. No CelebA-trained checkpoint is required or deployed, and no face-beautification GAN is enabled. See [THIRD_PARTY_MODELS.md](THIRD_PARTY_MODELS.md) for roles, licences and the distinction between downloaded and locally trained weights.
+
+Install/reinstall the accepted model files with `..\work\python312\python.exe setup_repair_models.py`, then run `serve_here.py` as below. Setup uses standard Python only; the existing app environment supplies PyTorch/OpenCV. Source archives/model weights are excluded from Git. The app also supports the pretrained path when a local Pix2Pix checkpoint is absent; optional local tone correction then remains disabled. If the accepted pretrained files are absent, the existing local Pix2Pix + OpenCV baseline remains available.
+
 The user screen is deliberately simple: **upload -> automatic restoration -> original/restored photos -> one PNG download button**. There is no sidebar, technical settings, demo switch, mask upload or training dashboard in the customer-facing app. Scratch detection and processing size are chosen internally. Black-and-white photos keep their original color style.
 
 ## Model and training
@@ -12,14 +18,14 @@ The user screen is deliberately simple: **upload -> automatic restoration -> ori
 - Training alternates one D update and one G update using Adam, ordinary backward() and step().
 - Float32 keeps the code explainable. No mixed precision, perceptual network or learning-rate scheduler.
 - Only G is used at inference. The compact Generator is a Pix2Pix-style adaptation, not the original eight-level architecture.
-- App output combines GAN tone/detail restoration with narrow-mask OpenCV interpolation. Fills use original local context plus GAN tone correction estimated only from intact pixels. The damaged input is never blended back into a selected scratch.
+- Selected app output uses learned damage segmentation and LaMa inpainting; local Pix2Pix tone correction is conditional on low contrast. The earlier Pix2Pix + OpenCV interpolation is retained as an explicit legacy backend for comparisons.
 
 Read [VIVA_GUIDE.md](VIVA_GUIDE.md) for the code explanation.
 
 ## Status
 Training reached **epoch 40** after 30 extra epochs on all 800 original HR training sources using the RTX 4050. Each source contributes a random 256×256 crop per epoch; 100 validation sources remain outside training. Epoch-40 best and resumable G/D state are active in `runs/pix2pix`; epoch 10 is backed up in `runs/pix2pix-backup-10-long`. Matched automatic-mask HR validation improved G PSNR 22.67 -> 25.81 dB and SSIM 0.8615 -> 0.8944. New grey-crease evaluation reduced scratch MAE 19%; separate category scores improved. Legacy mixed-damage PSNR is unchanged and SSIM slightly lower. See [TRAINING_REPORT.md](TRAINING_REPORT.md) for exact comparisons and limits.
 
-Validation: 12 local functional tests pass, plus actual side-panel before/after and exact PNG download checks. A real monochrome portrait exposed missed faded-grey scratches; the local-contrast fallback removes major right-side creases, while small spots and border damage remain. Tests establish execution; exported photo comparisons establish the limited quality evidence.
+Validation: 13 local functional tests pass, plus actual side-panel before/after and PNG download checks. The selected backend reproduces the user's accepted portrait (including additional facial mark removal); repeated CUDA runs differ by at most one intensity level in the final PNG. Tests establish execution; exported photo comparisons establish limited quality evidence, not perfect reconstruction.
 
 ## Run on Windows
 Keep the existing environment: GAN uses the same installed libraries. Only a fresh environment needs `setup.ps1`.

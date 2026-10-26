@@ -131,7 +131,7 @@ def test_automatic_repair_does_not_blend_white_damage_back():
     photo = np.full((96,96,3),120,np.uint8)
     cv2.line(photo,(20,10),(70,85),(255,255,255),2)
     # Zero-initialized residual head is identity: isolates actual repair stage.
-    result,mask = restore_automatic(Pix2PixGenerator(8).eval(),photo,return_mask=True)
+    result,mask = restore_automatic(Pix2PixGenerator(8).eval(),photo,return_mask=True,backend='legacy')
     assert mask.any()
     assert np.abs(result[mask>0].astype(float)-120).mean() < 6
     assert np.array_equal(result[:,:,0],result[:,:,1])
@@ -160,3 +160,17 @@ def test_realistic_training_keeps_true_damage_when_detector_misses(tmp_path,monk
     assert all(not condition[3].any() for condition,_,_ in examples)
     assert all(target.shape==(3,64,64) and truth.shape==(1,64,64)
                for _,target,truth in examples)
+
+
+def test_learned_inpainting_preserves_all_unselected_pixels(monkeypatch):
+    import learned_repair
+    class FakeInpainter(torch.nn.Module):
+        def forward(self,image,mask):
+            return torch.full_like(image,.75)
+    monkeypatch.setattr(learned_repair,'load_inpainter',lambda device:FakeInpainter())
+    photo = np.random.default_rng(93).integers(0,255,(31,37,3),dtype=np.uint8)
+    mask = np.zeros((31,37),np.uint8)
+    mask[10:14,18:21] = 255
+    restored = learned_repair.context_inpaint(photo,mask)
+    assert np.array_equal(restored[mask==0],photo[mask==0])
+    assert np.all(restored[mask>0]==191)

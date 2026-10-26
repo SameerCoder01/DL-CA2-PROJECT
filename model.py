@@ -207,12 +207,18 @@ def classical_restore(image: np.ndarray, mask: np.ndarray, strength: float = .65
     return cv2.addWeighted(enhanced, strength, repaired, 1-strength, 0)
 
 
-def restore_automatic(net, photo, device="cpu", return_mask=False):
-    """GAN tone restoration plus narrow, original-image scratch interpolation.
+def restore_automatic(net, photo, device="cpu", return_mask=False, backend="auto"):
+    """Use selected learned repair, or the legacy GAN/OpenCV fallback.
 
-    Inpainting the original avoids propagating GAN scratch halos into the fill.
-    Never blend the damaged original back inside a selected scratch.
+    In the legacy path, original-image interpolation avoids GAN scratch halos.
+    Both paths avoid blending damaged pixels back into selected scratch fills.
     """
+    if backend not in {"auto","legacy","learned"}:
+        raise ValueError("Unknown restoration backend")
+    if backend != "legacy":
+        from learned_repair import available, restore_with_learned
+        if backend == "learned" or available():
+            return restore_with_learned(net,photo,device,return_mask)
     mask = detect_scratches(photo, 32)
     if np.mean(mask > 0) > .08:
         mask = detect_scratches(photo, 50)

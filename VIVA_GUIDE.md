@@ -1,7 +1,17 @@
 # GAN viva guide
 
+## Final app: kaunsa model kya karta hai?
+
+- Microsoft ka pretrained U-Net scratch/damage mask predict karta hai. Yeh supervised detector hai, GAN nahi.
+- Pretrained LaMa generator selected damage ko context se fill karta hai. LaMa adversarial/GAN aur perceptual losses se train hua tha; hamne iske weights download kiye hain, locally LaMa train nahi kiya.
+- Hamara `model.py` wala Pix2Pix G/D actually epoch 40 tak DIV2K par train hua. Final app low-contrast images mein is G ko optional tone correction ke liye use karti hai; accepted normal-contrast lady portrait ko extra tone/face enhancement nahi diya jata.
+- CelebA ka full training job **start nahi hua**, aur koi CelebA-trained checkpoint save/deploy nahi hua. Sirf 64-image speed probe ka temporary model discard kiya gaya. User accepted result ke baad dataset workflow cancel hua. GFPGAN enhancement enabled nahi hai.
+- UI simple hi hai: upload, automatic repair, before/after aur download. User photographs external server par upload nahi hote.
+
+Pretrained models ko khud trained models mat bolna. `THIRD_PARTY_MODELS.md` mein sources/licences aur `setup_repair_models.py` mein reproducible model installation hai. Neeche local Pix2Pix training ka explanation hai.
+
 ## Introduction
-"Ham conditional GAN se old photos restore karte hain. Generator damaged photo aur mask se restored image banata hai. Discriminator real clean image aur generated image ke patches judge karta hai. Dono adversarially train hote hain. Streamlit frontend upload, compare aur download provide karta hai."
+"Final photo repair ke liye learned scratch detector aur pretrained LaMa GAN use hote hain. Hamne ek separate Pix2Pix conditional GAN bhi train kiya: Generator damaged photo aur mask se clean target predict karta hai, Discriminator real/generated patches judge karta hai. Yeh local model low-contrast tone correction aur baseline comparison ke liye available hai. Streamlit upload, compare aur download provide karta hai."
 
 Only say "trained" after actual training completes and the results are checked.
 
@@ -11,7 +21,7 @@ Only say "trained" after actual training completes and the results are checked.
 3. `PatchDiscriminator` condition aur real/generated image saath dekhta hai aur patches ke logits deta hai.
 4. `gan_train_step` pehle D update, phir G update karta hai.
 5. `train` epochs repeat karta hai, validation aur checkpoints save karta hai.
-6. `restore_automatic` narrow scratch mask detect karta hai. `neural_restore` mein sirf Generator chalta hai; overlapping tiles memory limit karte hain. Selected scratches original local context se inpaint hote hain, phir intact pixels se estimated GAN tone correction milti hai. Yeh OpenCV stage GAN se alag hai.
+6. `restore_automatic` installed selected backend choose karta hai: learned detector, LaMa fill, aur zaroorat ho to local Pix2Pix tone correction. `neural_restore` local G ke overlapping tiles chalata hai. Explicit `backend='legacy'` se purana Pix2Pix/OpenCV comparison available hai.
 7. `App.py` mein user sirf photo upload karta hai. App automatic mask, processing size aur trained Generator choose karta hai, phir original/restored images aur ek Download button dikhata hai. Technical settings aur graphs frontend se hata diye gaye hain.
 
 ## Main training step

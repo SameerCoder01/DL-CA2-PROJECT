@@ -10,6 +10,7 @@ import streamlit as st
 import torch
 
 from model import ROOT, read_rgb, png_bytes, load_restorer, restore_automatic
+from learned_repair import available as learned_available
 
 st.set_page_config(page_title="Reframe | Photo Restoration", page_icon="\U0001F4F7",
                    layout="centered", initial_sidebar_state="collapsed")
@@ -40,7 +41,7 @@ def prepare_photo(photo):
 def restore_photo(photo, checkpoint):
     """Run the GAN and conservatively clean automatically detected scratches."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = cached_model(str(checkpoint), checkpoint.stat().st_mtime_ns, device)
+    model = cached_model(str(checkpoint), checkpoint.stat().st_mtime_ns, device) if checkpoint.is_file() else None
     return restore_automatic(model, photo, device)
 
 
@@ -53,11 +54,13 @@ checkpoint = ROOT / "runs/pix2pix/best.pt"
 if uploaded is not None:
     try:
         original = prepare_photo(read_rgb(io.BytesIO(uploaded.getvalue())))
-        if not checkpoint.is_file():
+        if not checkpoint.is_file() and not learned_available():
             st.error("Restoration is unavailable right now. Please try again later.")
         else:
-            key = hashlib.sha256(str((ROOT/"model.py").stat().st_mtime_ns).encode() + original.tobytes() +
-                                 str(checkpoint.stat().st_mtime_ns).encode()).hexdigest()
+            sources = [ROOT/"model.py",ROOT/"learned_repair.py",ROOT/"weights/learned_pipeline.json"]
+            revision = ":".join(str(path.stat().st_mtime_ns) for path in sources if path.exists())
+            weight_stamp = str(checkpoint.stat().st_mtime_ns) if checkpoint.is_file() else "pretrained-only"
+            key = hashlib.sha256(revision.encode() + original.tobytes() + weight_stamp.encode()).hexdigest()
             result = st.session_state.get("restored_result")
             if result is None or result["key"] != key:
                 with st.spinner("Restoring your photograph..."):

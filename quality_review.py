@@ -34,6 +34,7 @@ def main():
     parser.add_argument('--limit',type=int,default=20)
     parser.add_argument('--start',type=int,default=0)
     parser.add_argument('--realistic',action='store_true')
+    parser.add_argument('--backend',choices=['auto','legacy','learned'],default='auto')
     args = parser.parse_args()
     torch.set_num_threads(4)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -60,7 +61,7 @@ def main():
     if demo.exists():
         cases.append(('local_demo',model.read_rgb(demo),None,None))
     for i,(name,photo,clean,truth) in enumerate(cases):
-        result, mask = old_pipeline(net,photo,device,module) if args.old else model.restore_automatic(net,photo,device,return_mask=True)
+        result, mask = old_pipeline(net,photo,device,module) if args.old else model.restore_automatic(net,photo,device,return_mask=True,backend=args.backend)
         row = {'name':name,'mask_fraction':float(np.mean(mask>0))}
         if clean is not None:
             row['intact_input'] = bool(np.array_equal(photo,clean))
@@ -93,6 +94,7 @@ def main():
                                for label in ['damaged','intact']
                                for subset in [[r for r in measured if r['intact_input'] == (label=='intact')]]},
               'realistic':args.realistic,
+              'backend':args.backend,
               'scope':f'{len(measured)} validation sources from index {args.start}, fixed synthetic damage, automatic masks; grayscale subset. Not real historical-photo ground truth. Scratch MAE/recall exclude undamaged examples.'}
     (out/'metrics.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
     print(json.dumps(means,indent=2),flush=True)
