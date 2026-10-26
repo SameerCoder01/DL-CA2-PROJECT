@@ -71,19 +71,37 @@ def damage(clean: np.ndarray, seed: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 def detect_scratches(image: np.ndarray, sensitivity: int = 22) -> np.ndarray:
-    """Heuristic proposal only: thin bright/dark structures can also be real detail."""
+    """Conservative automatic proposal: thin straight scratches and bright spots.
+
+    Hough lines handle diagonal scratches as well as vertical/horizontal ones.
+    This remains a heuristic; real photographic detail can resemble damage.
+    """
     gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
     bright = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel)
     dark = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel)
-    candidate = np.uint8(np.maximum(bright, dark) > sensitivity) * 255
-    count, labels, stats, _ = cv2.connectedComponentsWithStats(candidate)
+    extreme = (gray >= 225) | (gray <= 25)
+    candidate = np.uint8((np.maximum(bright, dark) > sensitivity) & extreme) * 255
     mask = np.zeros_like(gray)
+    minimum = max(18, min(gray.shape)//9)
+    lines = cv2.HoughLinesP(candidate, 1, np.pi/180, threshold=max(12,minimum//2),
+                            minLineLength=minimum, maxLineGap=5)
+    if lines is not None:
+        for x1,y1,x2,y2 in lines[:,0]:
+            cv2.line(mask,(int(x1),int(y1)),(int(x2),int(y2)),255,3)
+    mask = cv2.dilate(mask, np.ones((3,3),np.uint8))
+    # Small bright flat spots can be peeling or missing paper. Thin lines have
+    # no thick core, so they do not interfere with this spot check.
+    white = np.uint8(gray >= 230)*255
+    core = np.uint8(cv2.distanceTransform(white,cv2.DIST_L2,3) > 3)*255
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(core)
+    spots = np.zeros_like(gray)
     for index in range(1, count):
         _, _, w, h, area = stats[index]
-        if area >= 10 and max(w, h) / max(1, min(w, h)) > 3:
-            mask[labels == index] = 255
-    return cv2.dilate(mask, np.ones((3, 3), np.uint8))
+        if 20 <= area <= gray.size*.008 and .6 <= w/max(h,1) <= 1.7 and area/(w*h) > .5:
+            spots[labels == index] = 255
+    spots = cv2.dilate(spots,cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(9,9)))
+    return cv2.bitwise_or(mask,cv2.bitwise_and(spots,white))
 
 
 def repair_scratches(image: np.ndarray, mask: np.ndarray) -> np.ndarray:

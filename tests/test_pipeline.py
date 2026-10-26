@@ -8,7 +8,7 @@ import torch
 from PIL import Image
 from streamlit.testing.v1 import AppTest
 from model import (ROOT, Pix2PixGenerator, PatchDiscriminator, gan_train_step, damage,
-                   neural_restore, classical_restore, repair_scratches, metric_pair, load_restorer, train)
+                   neural_restore, classical_restore, repair_scratches, detect_scratches, metric_pair, load_restorer, train)
 from prepare_data import safe_extract
 
 
@@ -110,3 +110,15 @@ def test_supervised_checkpoint_is_not_accepted_as_gan(tmp_path):
     torch.save({"state_dict":Pix2PixGenerator(8).state_dict(),"base":8},path)
     with pytest.raises(ValueError,match="Pix2Pix GAN"):
         load_restorer(path)
+
+
+def test_automatic_mask_finds_diagonal_scratches_and_white_spot():
+    import cv2
+    photo = np.full((256,256,3),120,np.uint8)
+    truth = np.zeros((256,256),np.uint8)
+    cv2.line(truth,(20,20),(220,160),255,2)
+    cv2.circle(truth,(130,190),10,255,-1)
+    photo[truth > 0] = 255
+    predicted = detect_scratches(photo,32)
+    assert np.mean(predicted[truth > 0] > 0) > .85
+    assert np.mean(predicted > 0) < .1

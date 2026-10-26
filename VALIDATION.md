@@ -40,3 +40,5 @@ On the same 20 synthetic evaluation photos:
 Both selected measures improved, so the epoch-6 checkpoint was promoted. The epoch-3 checkpoint and evaluation are retained in `runs/pix2pix-backup-3`. These scores use known synthetic masks; automatic-mask performance on real photos can differ.
 
 The simplified frontend passed startup, simulated upload, automatic model restoration, one valid PNG download output and cached-rerun checks. It exposes no settings selectors, sliders, toggles or radio controls.
+
+All 9 pipeline tests passed after the automatic-mask update. The detector proposes high-contrast straight lines and small white spots; the frontend limits mask coverage to reduce false positives. Visual inspection of the simulated upload confirmed removal of many white marks, with visible smearing around some repaired areas and a few missed scratches. It does not reconstruct severe missing detail reliably. Browser interaction was not automated; frontend verification used Streamlit AppTest.
