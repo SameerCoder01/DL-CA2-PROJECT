@@ -135,3 +135,15 @@ def test_automatic_repair_does_not_blend_white_damage_back():
     assert mask.any()
     assert np.abs(result[mask>0].astype(float)-120).mean() < 6
     assert np.array_equal(result[:,:,0],result[:,:,1])
+
+
+def test_faded_gray_crease_is_found_without_selecting_short_facial_highlight():
+    import cv2
+    photo = np.full((256,256,3),110,np.uint8)
+    truth = np.zeros((256,256),np.uint8)
+    cv2.line(truth,(210,15),(205,240),255,2)
+    photo[truth>0] = 180  # Scanned damage is grey, below the old white threshold.
+    cv2.ellipse(photo,(110,140),(12,2),0,0,360,(155,155,155),-1)
+    mask = detect_scratches(photo,32)
+    assert np.mean(mask[truth>0]>0) > .9
+    assert not mask[135:146,94:127].any()

@@ -1,5 +1,13 @@
 # Validation - 26 October 2026
 
+## Real uploaded portrait: faded-grey scratch detection fix
+
+The user's `images.jpg` portrait exposed a real failure: the automatic mask covered 0% of the image, leaving the prominent right-side diagonal and vertical creases untouched. Absolute bright/dark thresholds did not cover faded-grey damage in this scan. A monochrome-only fallback now selects elongated local-contrast ridges when the original detector selects less than 0.5% of the image. Short interior highlights are excluded to avoid selecting features such as the mouth. Border-connected damage can use a shorter length threshold.
+
+The final mask covers 7.66% of this portrait. Visual inspection confirmed removal of the large right-side cracks and some border marks, with facial features retained; small facial spots, faint scratches and damaged border remnants remain. No clean reference exists for this portrait, so no PSNR/SSIM improvement is claimed. The exact downloaded app PNG matches the locally inspected result. Local evidence is in `outputs/portrait_review` (input, old output, new output, masks, comparison and app screenshot); the portrait is excluded from Git.
+
+Eleven functional tests passed, including a faded-grey crease below the previous white threshold and a short highlight that must remain untouched. Rechecking the same 100-photo mixed benchmark gave exactly unchanged PSNR 21.1437, SSIM 0.813252 and scratch MAE 36.2566. Category checks remain improved over their inputs; faded B&W now gives PSNR 25.40 and SSIM 0.9547 (earlier values below predate this fallback). Model weights remain the verified epoch-10 GAN; this change repairs detection, without claiming extra training. App result caching now also depends on the pipeline source modification time so updated code does not display the previous cached result.
+
 ## Current active model: epoch 10
 
 Terminal access and CUDA RTX 4050 were verified in the Documents project. Resumed the existing epoch-6 G/D and optimizers for four additional epochs (800 samples/epoch, batch 4, 256 crops). Scratch pixels get 9x normalized L1 weight plus 0.15 edge L1; 30% paired grayscale and 25% estimated-mask inputs improve task coverage. Actual optimizer LR was 0.0002 inherited from the checkpoint; the initially requested 0.0001 did not take effect because the previous resume code restored optimizer LR. Metadata now records both values, and resume code applies requested LR for future runs.

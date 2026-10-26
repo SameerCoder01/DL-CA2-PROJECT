@@ -70,6 +70,36 @@ def damage(clean: np.ndarray, seed: int) -> tuple[np.ndarray, np.ndarray]:
     return x, mask
 
 
+def detect_faded_scratches(image: np.ndarray) -> np.ndarray:
+    """Find pale creases in monochrome prints by local contrast, not pure white.
+
+    Keep elongated connected ridges; broad facial shading is not a thin ridge.
+    Absolute white thresholds fail on scanned prints whose damage has faded grey.
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    ridge = cv2.morphologyEx(gray,cv2.MORPH_TOPHAT,
+                           cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(11,11)))
+    weak = np.uint8((ridge >= 12) & (gray >= 100))*255
+    linked = cv2.morphologyEx(weak,cv2.MORPH_CLOSE,np.ones((3,3),np.uint8))
+    count,labels,stats,_ = cv2.connectedComponentsWithStats(linked)
+    selected = np.zeros_like(gray)
+    for index in range(1,count):
+        x,y,w,h,area = stats[index]
+        near_edge = x < gray.shape[1]*.08 or x+w > gray.shape[1]*.92 or y < gray.shape[0]*.08 or y+h > gray.shape[0]*.92
+        minimum_length = 14 if near_edge else max(22,min(gray.shape)//8)
+        if area < 10 or max(w,h) < minimum_length:
+            continue
+        region = labels[y:y+h,x:x+w] == index
+        points = cv2.findNonZero(region.astype(np.uint8))
+        _,(a,b),_ = cv2.minAreaRect(points)
+        elongation = max(a,b)/max(min(a,b),1)
+        strong_fraction = np.mean(ridge[y:y+h,x:x+w][region] >= 22)
+        if elongation >= (1.7 if near_edge else 3.5) and strong_fraction >= .15:
+            selected[y:y+h,x:x+w][region] = 255
+    selected = cv2.bitwise_and(selected,weak)
+    return cv2.dilate(selected,np.ones((3,3),np.uint8))
+
+
 def detect_scratches(image: np.ndarray, sensitivity: int = 22) -> np.ndarray:
     """Conservative automatic proposal: thin straight scratches and bright spots.
 
@@ -114,7 +144,11 @@ def detect_scratches(image: np.ndarray, sensitivity: int = 22) -> np.ndarray:
         if 20 <= area <= gray.size*.008 and .6 <= w/max(h,1) <= 1.7 and area/(w*h) > .5:
             spots[labels == index] = 255
     spots = cv2.dilate(spots,cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(9,9)))
-    return cv2.bitwise_or(mask,cv2.bitwise_and(spots,white))
+    mask = cv2.bitwise_or(mask,cv2.bitwise_and(spots,white))
+    chroma = image.max(axis=2).astype(float)-image.min(axis=2)
+    if chroma.mean() < 8 and np.mean(mask > 0) < .005:
+        mask = cv2.bitwise_or(mask,detect_faded_scratches(image))
+    return mask
 
 
 def repair_scratches(image: np.ndarray, mask: np.ndarray) -> np.ndarray:

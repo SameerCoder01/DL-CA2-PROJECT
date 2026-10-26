@@ -56,7 +56,7 @@ if uploaded is not None:
         if not checkpoint.is_file():
             st.error("Restoration is unavailable right now. Please try again later.")
         else:
-            key = hashlib.sha256(b"automatic-v3" + original.tobytes() +
+            key = hashlib.sha256(str((ROOT/"model.py").stat().st_mtime_ns).encode() + original.tobytes() +
                                  str(checkpoint.stat().st_mtime_ns).encode()).hexdigest()
             result = st.session_state.get("restored_result")
             if result is None or result["key"] != key:

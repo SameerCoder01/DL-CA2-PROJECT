@@ -19,7 +19,7 @@ Read [VIVA_GUIDE.md](VIVA_GUIDE.md) for the code explanation.
 ## Status
 Training reached epoch 10 by resuming the existing epoch-6 GAN for four additional epochs. Verified weights are active at `runs/pix2pix/best.pt`; resumable G/D and optimizer states are in `last.pt`. The epoch-6 run is backed up in `runs/pix2pix-backup-6-quality`. Automatic-mask evaluation on 100 validation crops gives PSNR 21.12 -> 21.14 dB, SSIM 0.801 -> 0.813, and scratch MAE 45.52 -> 36.26. Automatic GAN strength protects intact texture in photos with healthy contrast. Separate faded, scratched, damaged and B&W checks improved both average PSNR and SSIM in every category. These are synthetic validation results, not independent historical-photo evidence. See [VALIDATION.md](VALIDATION.md).
 
-Validation: 10 local functional tests passed, plus actual side-panel upload, before/after and PNG download checks. Tests establish execution; exported photo comparisons establish the limited quality evidence.
+Validation: 11 local functional tests passed, plus actual side-panel upload, before/after and PNG download checks. A real uploaded monochrome portrait exposed missed faded-grey scratches; a local-contrast fallback now removes its major right-side creases. Small spots and border damage remain. Tests establish execution; exported photo comparisons establish the limited quality evidence.
 
 ## Run on Windows
 Keep the existing environment: GAN uses the same installed libraries. Only a fresh environment needs `setup.ps1`.
