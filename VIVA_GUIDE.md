@@ -11,7 +11,7 @@ Only say "trained" after actual training completes and the results are checked.
 3. `PatchDiscriminator` condition aur real/generated image saath dekhta hai aur patches ke logits deta hai.
 4. `gan_train_step` pehle D update, phir G update karta hai.
 5. `train` epochs repeat karta hai, validation aur checkpoints save karta hai.
-6. `neural_restore` inference mein sirf Generator chalata hai. Overlapping tiles memory limit karte hain.
+6. `neural_restore` inference mein sirf Generator chalata hai. Overlapping tiles memory limit karte hain. App uske baad `repair_scratches` se selected mask par OpenCV cleanup karta hai; yeh GAN se alag step hai.
 7. `App.py` input aur output display handle karta hai.
 
 ## Main training step

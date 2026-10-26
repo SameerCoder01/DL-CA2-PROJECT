@@ -12,7 +12,7 @@ import streamlit as st
 import torch
 
 from model import (ROOT, read_rgb, png_bytes, detect_scratches, classical_restore,
-                   load_restorer, neural_restore, colorize, damage)
+                   load_restorer, neural_restore, colorize, damage, repair_scratches)
 
 st.set_page_config(page_title="Reframe · Photo Restoration", page_icon="📷", layout="wide")
 st.markdown("""<style>
@@ -39,6 +39,8 @@ with st.sidebar:
     available = checkpoint.is_file()
     choices = ["OpenCV baseline"] + (["Trained Pix2Pix GAN"] if available else [])
     engine = st.selectbox("Restoration engine", choices, index=len(choices)-1)
+    if engine == "Trained Pix2Pix GAN":
+        st.caption("GAN restores the photo; OpenCV cleans the selected scratch mask afterwards.")
     if available:
         st.success("Restoration checkpoint available")
     else:
@@ -125,6 +127,7 @@ with studio:
                         net, metadata = cached_model(str(checkpoint), checkpoint.stat().st_mtime_ns, device)
                         restored = neural_restore(net, image, mask, device)
                         restored = cv2.addWeighted(restored, strength, image, 1-strength, 0)
+                        restored = repair_scratches(restored, mask)
                     else:
                         restored = classical_restore(image, mask, strength)
                     if use_color:
@@ -145,7 +148,7 @@ with studio:
                 a,b,c = st.columns(3)
                 a.metric("Processing time", f'{result["seconds"]:.2f} s')
                 b.metric("Output size", f"{image.shape[1]} × {image.shape[0]}")
-                c.metric("Engine", "Pix2Pix GAN" if engine == "Trained Pix2Pix GAN" else "OpenCV")
+                c.metric("Engine", "GAN + mask repair" if engine == "Trained Pix2Pix GAN" else "OpenCV")
                 if reference is not None:
                     from model import metric_pair
                     before_psnr, before_ssim = metric_pair(image, reference)
@@ -185,7 +188,7 @@ with about:
     st.markdown("""### A clear restoration workflow
 1. **Prepare** — correct EXIF orientation and resize within your processing limit.
 2. **Locate damage** — inspect an automatic scratch proposal or supply a white-on-black mask.
-3. **Restore** — run your trained Pix2Pix GAN Generator, or the clearly labeled OpenCV baseline.
+3. **Restore** — run your trained Pix2Pix GAN Generator and selected-mask OpenCV cleanup, or the OpenCV baseline.
 4. **Colorize optionally** — use the pretrained ECCV16 colorization model by Zhang et al.
 5. **Compare and download** — inspect the result and export a PNG.
 

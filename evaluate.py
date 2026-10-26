@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 import torch
-from model import ROOT, image_paths, read_rgb, damage, neural_restore, load_restorer, metric_pair, classical_restore
+from model import ROOT, image_paths, read_rgb, damage, neural_restore, load_restorer, metric_pair, classical_restore, repair_scratches
 
 
 def main():
@@ -32,18 +32,19 @@ def main():
         degraded, mask = damage(image, 91000+i)
         restored = neural_restore(net,degraded,mask,device)
         baseline = classical_restore(degraded,mask)
+        hybrid = repair_scratches(restored,mask)
         row = {"file":path.name}
-        for name,pred in [("input",degraded),("opencv",baseline),("gan",restored)]:
+        for name,pred in [("input",degraded),("opencv",baseline),("gan",restored),("hybrid",hybrid)]:
             psnr,ssim = metric_pair(pred,image)
             row.update({name+"_psnr":psnr,name+"_ssim":ssim})
         rows.append(row)
         if i < 6:
-            Image.fromarray(np.concatenate([degraded,baseline,restored,image],1)).save(out/f"comparison_{i:02}.png")
+            Image.fromarray(np.concatenate([degraded,baseline,restored,hybrid,image],1)).save(out/f"comparison_{i:02}.png")
         print(json.dumps(row),flush=True)
     means = {key:float(np.mean([r[key] for r in rows])) for key in rows[0] if key != "file"}
     report = {"checkpoint_epoch":checkpoint["epoch"],"count":len(rows),"means":means,"per_image":rows,
               "scope":"Held-out source photos with new synthetic corruption. Same validation split; not an independent real-world test set.",
-              "comparison_order":"input | OpenCV | Pix2Pix GAN | clean reference"}
+              "comparison_order":"input | OpenCV | GAN only | GAN + OpenCV mask repair | clean reference"}
     (out/"metrics.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
     print(json.dumps(means,indent=2))
 

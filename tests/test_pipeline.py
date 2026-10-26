@@ -8,7 +8,7 @@ import torch
 from PIL import Image
 from streamlit.testing.v1 import AppTest
 from model import (ROOT, Pix2PixGenerator, PatchDiscriminator, gan_train_step, damage,
-                   neural_restore, classical_restore, metric_pair, load_restorer, train)
+                   neural_restore, classical_restore, repair_scratches, metric_pair, load_restorer, train)
 from prepare_data import safe_extract
 
 
@@ -20,6 +20,13 @@ def test_damage_and_baseline():
     assert mask.any() and a.shape == image.shape
     assert classical_restore(a,mask).shape == image.shape
     assert metric_pair(image,image)[1] == pytest.approx(1)
+    scratched = image.copy()
+    scratched[:,39:41] = 0
+    selected = np.zeros((64,80),np.uint8)
+    selected[:,39:41] = 255
+    repaired = repair_scratches(scratched,selected)
+    assert repaired[:,39:41].mean() > 100
+    assert np.array_equal(repaired[selected == 0],scratched[selected == 0])
 
 
 def test_backward_checkpoint_and_tiling(tmp_path):

@@ -10,11 +10,12 @@ Streamlit frontend: `App.py`. PyTorch Generator, Discriminator and training: `mo
 - Training alternates one D update and one G update using Adam, ordinary backward() and step().
 - Float32 keeps the code explainable. No mixed precision, perceptual network or learning-rate scheduler.
 - Only G is used at inference. The compact Generator is a Pix2Pix-style adaptation, not the original eight-level architecture.
+- App output uses GAN restoration followed by OpenCV cleanup of the selected scratch mask. Evaluation reports GAN-only and this combined output separately. Three-epoch training alone does not reliably remove every thin scratch.
 
 Read [VIVA_GUIDE.md](VIVA_GUIDE.md) for the code explanation.
 
 ## Status
-GAN implementation is available. Full dataset GAN training and quality evaluation remain pending until an actual run completes. Old supervised U-Net weights are rejected. The app uses the labeled OpenCV baseline until `runs/pix2pix/best.pt` exists.
+The short 3-epoch GAN training run is complete. The local app loads `runs/pix2pix/best.pt`. See [VALIDATION.md](VALIDATION.md) for actual results and limits. Old supervised U-Net weights are rejected. On a fresh checkout without weights, the app exposes the labeled OpenCV baseline.
 
 Validation: eight local functional tests passed, including adversarial-only updates of both networks, checkpoint resume and Streamlit startup. These tests establish execution, not restoration quality.
 

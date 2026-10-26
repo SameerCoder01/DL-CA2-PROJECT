@@ -86,8 +86,13 @@ def detect_scratches(image: np.ndarray, sensitivity: int = 22) -> np.ndarray:
     return cv2.dilate(mask, np.ones((3, 3), np.uint8))
 
 
+def repair_scratches(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Optional OpenCV cleanup for selected scratches; separate from the GAN."""
+    return cv2.inpaint(image, mask, 3, cv2.INPAINT_TELEA) if mask.any() else image.copy()
+
+
 def classical_restore(image: np.ndarray, mask: np.ndarray, strength: float = .65) -> np.ndarray:
-    repaired = cv2.inpaint(image, mask, 3, cv2.INPAINT_TELEA) if mask.any() else image.copy()
+    repaired = repair_scratches(image, mask)
     bgr = cv2.cvtColor(repaired, cv2.COLOR_RGB2BGR)
     denoised = cv2.cvtColor(cv2.fastNlMeansDenoisingColored(bgr, None, 4, 4, 7, 21), cv2.COLOR_BGR2RGB)
     lab = cv2.cvtColor(denoised, cv2.COLOR_RGB2LAB)
