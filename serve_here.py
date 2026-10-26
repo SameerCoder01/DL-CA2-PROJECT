@@ -9,5 +9,6 @@ if packages.is_dir():
     sys.path.insert(0, str(packages))
 sys.path.insert(0, str(project))
 sys.argv = ["streamlit", "run", str(project/"App.py"), "--server.headless=true",
-            "--server.address=127.0.0.1", "--server.port=8501", "--browser.gatherUsageStats=false"]
+            "--server.address=127.0.0.1", "--server.port=8501", "--server.runOnSave=true",
+            "--browser.gatherUsageStats=false"]
 runpy.run_module("streamlit", run_name="__main__")

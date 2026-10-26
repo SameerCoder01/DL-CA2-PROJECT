@@ -78,7 +78,14 @@ studio, training, about = st.tabs(["Restoration studio", "Training & evidence", 
 with studio:
     st.subheader("01 / Choose a photograph")
     uploaded = st.file_uploader("Upload an old photograph", type=["jpg", "jpeg", "png", "webp", "tif", "tiff"])
+    sample_path = ROOT / "data/fast/valid/0801.png"
+    use_sample = st.toggle("Try the built-in demo photo", value=sample_path.is_file())
+    using_sample = uploaded is None and use_sample and sample_path.is_file()
+    if using_sample:
+        uploaded = sample_path
+        st.caption("Demo uses a validation photo with synthetic scratches and fading, with its clean reference available.")
     demo = st.toggle("Presentation demo: add synthetic damage to your uploaded image",
+                     value=using_sample,
                      help="Use a clean photo. This creates a known clean reference, not a real-world quality score.")
     if uploaded:
         try:
@@ -118,8 +125,10 @@ with studio:
                 st.warning("More than 20% of the photo is selected. Try a higher threshold or a precise uploaded mask.")
             run_key = hashlib.sha256(image.tobytes()+mask.tobytes()+
                 json.dumps([engine,strength,use_color,checkpoint.stat().st_mtime_ns if available else 0]).encode()).hexdigest()
-            if st.button("✦ Restore photograph", type="primary", use_container_width=True,
-                         disabled=use_color and not color_ready):
+            restore_clicked = st.button("✦ Restore photograph", type="primary", use_container_width=True,
+                                        disabled=use_color and not color_ready)
+            auto_demo = using_sample and not (st.session_state.get("result", {}).get("key") == run_key)
+            if (restore_clicked or auto_demo) and not (use_color and not color_ready):
                 start = time.perf_counter()
                 with st.spinner("Restoring your photograph…"):
                     if engine == "Trained Pix2Pix GAN":
