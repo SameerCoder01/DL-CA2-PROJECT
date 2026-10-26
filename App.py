@@ -35,14 +35,14 @@ with st.sidebar:
     st.markdown("### 📷 REFRAME")
     st.caption("OLD PHOTOGRAPHS. NEW LIFE.")
     st.divider()
-    checkpoint = ROOT / "runs/restoration/best.pt"
+    checkpoint = ROOT / "runs/pix2pix/best.pt"
     available = checkpoint.is_file()
-    choices = ["OpenCV baseline"] + (["Trained U-Net"] if available else [])
+    choices = ["OpenCV baseline"] + (["Trained Pix2Pix GAN"] if available else [])
     engine = st.selectbox("Restoration engine", choices, index=len(choices)-1)
     if available:
         st.success("Restoration checkpoint available")
     else:
-        st.info("U-Net weights are not trained yet. Baseline uses OpenCV; it is not deep learning.")
+        st.info("Pix2Pix GAN weights are not trained yet. Baseline uses OpenCV; it is not deep learning.")
     st.caption(f"Hardware: {'CUDA GPU' if torch.cuda.is_available() else 'CPU'}")
     strength = st.slider("Restoration strength", 0., 1., .65, .05)
     mask_mode = st.radio("Damage mask", ["Automatic proposal", "Upload a mask", "No scratch repair"])
@@ -113,7 +113,7 @@ with studio:
                          disabled=use_color and not color_ready):
                 start = time.perf_counter()
                 with st.spinner("Restoring your photograph…"):
-                    if engine == "Trained U-Net":
+                    if engine == "Trained Pix2Pix GAN":
                         device = "cuda" if torch.cuda.is_available() else "cpu"
                         net, metadata = cached_model(str(checkpoint), checkpoint.stat().st_mtime_ns, device)
                         restored = neural_restore(net, image, mask, device)
@@ -138,7 +138,7 @@ with studio:
                 a,b,c = st.columns(3)
                 a.metric("Processing time", f'{result["seconds"]:.2f} s')
                 b.metric("Output size", f"{image.shape[1]} × {image.shape[0]}")
-                c.metric("Engine", "U-Net" if engine == "Trained U-Net" else "OpenCV")
+                c.metric("Engine", "Pix2Pix GAN" if engine == "Trained Pix2Pix GAN" else "OpenCV")
                 if reference is not None:
                     from model import metric_pair
                     before_psnr, before_ssim = metric_pair(image, reference)
@@ -156,10 +156,11 @@ with studio:
 
 with training:
     st.subheader("Measured progress, visible results")
-    history = ROOT / "runs/restoration/history.csv"
+    history = ROOT / "runs/pix2pix/history.csv"
     if history.is_file():
         frame = pd.read_csv(history)
         if not frame.empty:
+            st.line_chart(frame.set_index("epoch")[["g_loss", "d_loss"]])
             st.line_chart(frame.set_index("epoch")[["psnr", "input_psnr"]])
             st.line_chart(frame.set_index("epoch")[["ssim", "input_ssim"]])
             st.dataframe(frame, use_container_width=True)
@@ -167,19 +168,21 @@ with training:
     else:
         st.info("No completed training epochs found. No training metrics or quality claims are available yet.")
     st.code("python prepare_data.py --dataset\npython model.py --epochs 60 --batch-size 4\npython evaluate.py", language="bash")
-    st.write("Training uses a mask-conditioned residual U-Net, masked L1 + reconstruction + gradient loss, "
-             "mixed precision on CUDA, early stopping and the best validation PSNR checkpoint.")
+    st.write("Pix2Pix GAN training uses a U-Net Generator and a conditional PatchGAN Discriminator. "
+             "G loss = adversarial loss + 100 x L1 loss. D learns real versus generated image patches. "
+             "Both networks use ordinary float32 PyTorch and Adam; only the Generator runs during restoration.")
 
 with about:
     st.markdown("""### A clear restoration workflow
 1. **Prepare** — correct EXIF orientation and resize within your processing limit.
 2. **Locate damage** — inspect an automatic scratch proposal or supply a white-on-black mask.
-3. **Restore** — run your trained U-Net, or the clearly labeled OpenCV baseline.
+3. **Restore** — run your trained Pix2Pix GAN Generator, or the clearly labeled OpenCV baseline.
 4. **Colorize optionally** — use the pretrained ECCV16 colorization model by Zhang et al.
 5. **Compare and download** — inspect the result and export a PNG.
 
 The network learns from clean DIV2K images with synthetic fading, noise, JPEG compression and scratches.
-The 800 training and 100 validation source images are kept separate. This project uses a U-Net restoration
-model; it does not claim to implement a GAN or Pix2Pix. Large missing faces, severe tears and unseen damage
+The 800 training and 100 validation source images are kept separate. This project trains a Pix2Pix-style
+conditional GAN: a compact residual U-Net Generator competes with a 70x70 PatchGAN Discriminator.
+Large missing faces, severe tears and unseen damage
 remain difficult. Colorization predicts plausible colors and may be inaccurate.
 """)

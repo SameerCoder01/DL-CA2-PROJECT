@@ -10,7 +10,7 @@ from model import ROOT, image_paths, read_rgb, damage, neural_restore, load_rest
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--checkpoint", default=str(ROOT/"runs/restoration/best.pt"))
+    parser.add_argument("--checkpoint", default=str(ROOT/"runs/pix2pix/best.pt"))
     parser.add_argument("--data", default=str(ROOT/"data/DIV2K_valid_HR"))
     parser.add_argument("--output", default=str(ROOT/"outputs/evaluation"))
     parser.add_argument("--limit",type=int,default=100)
@@ -33,7 +33,7 @@ def main():
         restored = neural_restore(net,degraded,mask,device)
         baseline = classical_restore(degraded,mask)
         row = {"file":path.name}
-        for name,pred in [("input",degraded),("opencv",baseline),("unet",restored)]:
+        for name,pred in [("input",degraded),("opencv",baseline),("gan",restored)]:
             psnr,ssim = metric_pair(pred,image)
             row.update({name+"_psnr":psnr,name+"_ssim":ssim})
         rows.append(row)
@@ -43,7 +43,7 @@ def main():
     means = {key:float(np.mean([r[key] for r in rows])) for key in rows[0] if key != "file"}
     report = {"checkpoint_epoch":checkpoint["epoch"],"count":len(rows),"means":means,"per_image":rows,
               "scope":"Held-out source photos with new synthetic corruption. Same validation split; not an independent real-world test set.",
-              "comparison_order":"input | OpenCV | U-Net | clean reference"}
+              "comparison_order":"input | OpenCV | Pix2Pix GAN | clean reference"}
     (out/"metrics.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
     print(json.dumps(means,indent=2))
 

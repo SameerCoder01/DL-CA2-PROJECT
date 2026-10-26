@@ -45,4 +45,4 @@ Write-Host "App process: $($taskAppProcess.Id). Open http://localhost:8501"
 Write-Host 'Training will now run in this console. Keep it open; completion time depends on the GPU.'
 & .\train.ps1
 if ($LASTEXITCODE -ne 0) { throw 'Training or evaluation failed. Read the error above.' }
-Write-Host 'Training and evaluation complete. Refresh the app and select Trained U-Net.'
+Write-Host 'Training and evaluation complete. Refresh the app and select Trained Pix2Pix GAN.'

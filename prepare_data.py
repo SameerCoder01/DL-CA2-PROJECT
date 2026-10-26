@@ -2,7 +2,6 @@
 import argparse
 import hashlib
 import json
-import shutil
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -27,7 +26,18 @@ def download(url, destination):
     try:
         request = urllib.request.Request(url, headers={"User-Agent": "DL-CA2-academic-project/1.0"})
         with urllib.request.urlopen(request, timeout=90) as response, temporary.open("wb") as target:
-            shutil.copyfileobj(response, target)
+            total = int(response.headers.get("Content-Length", 0))
+            received, last_report = 0, 0
+            while True:
+                chunk = response.read(1024*1024)
+                if not chunk:
+                    break
+                target.write(chunk)
+                received += len(chunk)
+                if received-last_report >= 32*1024*1024:
+                    progress = f" ({received/total:.0%})" if total else ""
+                    print(f"Downloaded {received/(1024*1024):.0f} MB{progress}", flush=True)
+                    last_report = received
         if temporary.stat().st_size == 0:
             raise ValueError("The download was empty")
         temporary.replace(destination)

@@ -1,4 +1,4 @@
-"""Train and run a mask-conditioned residual U-Net for photograph restoration.
+"""Train and run a Pix2Pix conditional GAN for photograph restoration.
 
 No pretrained restoration weights are bundled. OpenCV mode is a separate baseline.
 """
@@ -107,13 +107,16 @@ class Block(nn.Module):
         return self.layers(x)
 
 
-class RestorationUNet(nn.Module):
+class Pix2PixGenerator(nn.Module):
+    """Compact residual U-Net generator conditioned on RGB plus damage mask."""
     def __init__(self, base=32):
         super().__init__()
         self.e1, self.e2 = Block(4, base), Block(base, base*2)
         self.e3, self.mid = Block(base*2, base*4), Block(base*4, base*8)
         self.d3, self.d2, self.d1 = Block(base*12, base*4), Block(base*6, base*2), Block(base*3, base)
         self.head = nn.Conv2d(base, 3, 1)
+        nn.init.zeros_(self.head.weight)
+        nn.init.zeros_(self.head.bias)
 
     def forward(self, x):
         a = self.e1(x)
@@ -123,8 +126,68 @@ class RestorationUNet(nn.Module):
         def up(z, skip, block):
             return block(torch.cat([F.interpolate(z, size=skip.shape[-2:],
                                                   mode="bilinear", align_corners=False), skip], 1))
-        z = up(up(up(z, c, self.d3), b, self.d2), a, self.d1)
+        z = up(z, c, self.d3)
+        z = up(z, b, self.d2)
+        z = up(z, a, self.d1)
         return (x[:, :3] + self.head(z)).clamp(0, 1)
+
+
+class PatchDiscriminator(nn.Module):
+    """70x70 PatchGAN: judges (damaged RGB, mask, candidate RGB) jointly.
+
+    Outputs logits, not sigmoid probabilities, for BCEWithLogitsLoss.
+    GroupNorm makes training with small laptop GPU batches practical.
+    """
+    def __init__(self, base=32):
+        super().__init__()
+        layers = [nn.Conv2d(7, base, 4, 2, 1), nn.LeakyReLU(.2)]
+        inp = base
+        for out, stride in [(base*2, 2), (base*4, 2), (base*8, 1)]:
+            layers += [nn.Conv2d(inp, out, 4, stride, 1, bias=False),
+                       nn.GroupNorm(8, out), nn.LeakyReLU(.2)]
+            inp = out
+        self.layers = nn.Sequential(*layers, nn.Conv2d(inp, 1, 4, 1, 1))
+
+    def forward(self, condition, candidate):
+        return self.layers(torch.cat([condition, candidate], dim=1))
+
+
+def gan_train_step(generator, discriminator, optimizer_g, optimizer_d, inp, target,
+                   lambda_l1=100.):
+    """Viva flow: create fake -> train D -> train G. Ordinary float32 PyTorch."""
+    # 1. Generator tries to turn the damaged photograph into a clean photograph.
+    fake = generator(inp)
+
+    # 2. Discriminator learns: clean target = real (1), generated image = fake (0).
+    # detach() prevents this D update from changing the Generator.
+    optimizer_g.zero_grad(set_to_none=True)
+    optimizer_d.zero_grad(set_to_none=True)
+    real_logits = discriminator(inp, target)
+    fake_logits = discriminator(inp, fake.detach())
+    d_loss = .5 * (F.binary_cross_entropy_with_logits(real_logits, torch.ones_like(real_logits)) +
+                   F.binary_cross_entropy_with_logits(fake_logits, torch.zeros_like(fake_logits)))
+    if not torch.isfinite(d_loss):
+        raise RuntimeError("Non-finite discriminator loss")
+    d_loss.backward()
+    optimizer_d.step()
+
+    # 3. Generator learns to fool D, while matching the actual clean photograph.
+    # Freeze D's weights, but keep the gradient flowing through D to the Generator.
+    optimizer_d.zero_grad(set_to_none=True)
+    discriminator.requires_grad_(False)
+    try:
+        logits = discriminator(inp, fake)
+        adversarial = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits))
+        reconstruction = F.l1_loss(fake, target)
+        g_loss = adversarial + lambda_l1 * reconstruction
+        if not torch.isfinite(g_loss):
+            raise RuntimeError("Non-finite generator loss")
+        g_loss.backward()
+        optimizer_g.step()
+    finally:
+        discriminator.requires_grad_(True)
+    return {"g_loss": g_loss.item(), "d_loss": d_loss.item(),
+            "g_adversarial": adversarial.item(), "reconstruction": reconstruction.item()}
 
 
 def tensor(image: np.ndarray) -> torch.Tensor:
@@ -156,17 +219,6 @@ class PhotoPairs(Dataset):
             clean = np.rot90(clean, rng.randrange(4)).copy()
         degraded, mask = damage(clean, rng.randrange(2**31))
         return torch.cat([tensor(degraded), torch.from_numpy(mask.copy()).unsqueeze(0).float()/255]), tensor(clean)
-
-
-def restoration_loss(pred, target, mask):
-    error = (pred-target).abs()
-    reconstruction = error.mean()
-    masked = (error*mask).sum() / (3*mask.sum()).clamp_min(1)
-    edge = ((pred[:, :, 1:, :] - pred[:, :, :-1, :]) -
-            (target[:, :, 1:, :] - target[:, :, :-1, :])).abs().mean()
-    edge += ((pred[:, :, :, 1:] - pred[:, :, :, :-1]) -
-             (target[:, :, :, 1:] - target[:, :, :, :-1])).abs().mean()
-    return reconstruction + 2*masked + .1*edge
 
 
 def metric_pair(pred, target):
@@ -209,20 +261,24 @@ def train(args):
     val_set = PhotoPairs(val_files, args.size, validation=True)
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
     val_loader = DataLoader(val_set, batch_size=1, num_workers=args.workers)
-    net = RestorationUNet().to(device)
-    optimizer = torch.optim.AdamW(net.parameters(), lr=args.lr, weight_decay=1e-4)
-    schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs)
-    scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
+    net = Pix2PixGenerator().to(device)
+    discriminator = PatchDiscriminator().to(device)
+    optimizer = torch.optim.Adam(net.parameters(), lr=args.lr, betas=(.5, .999))
+    optimizer_d = torch.optim.Adam(discriminator.parameters(), lr=args.lr, betas=(.5, .999))
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     start, best, stale = 0, -float("inf"), 0
+    if (out/"history.csv").exists() and not args.resume:
+        raise ValueError("Output already contains training history. Use --resume with a GAN last.pt or choose a new --output.")
     if args.resume:
         checkpoint = torch.load(args.resume, map_location=device, weights_only=True)
-        print("Resume restores weights and optimizer; use the original data and schedule settings.", flush=True)
+        if checkpoint.get("model_type") != "pix2pix_gan":
+            raise ValueError("This is not a Pix2Pix GAN checkpoint. Start a fresh GAN run.")
+        print("Resume restores both GAN networks and optimizers; keep original training settings.", flush=True)
         net.load_state_dict(checkpoint["state_dict"])
+        discriminator.load_state_dict(checkpoint["discriminator"])
         optimizer.load_state_dict(checkpoint["optimizer"])
-        schedule.load_state_dict(checkpoint["scheduler"])
-        scaler.load_state_dict(checkpoint["scaler"])
+        optimizer_d.load_state_dict(checkpoint["optimizer_d"])
         start, best = checkpoint["epoch"], checkpoint["best_psnr"]
     (out/"config.json").write_text(json.dumps(vars(args), indent=2), encoding="utf-8")
     (out/"split.json").write_text(json.dumps({"train": [str(p) for p in train_files],
@@ -230,43 +286,39 @@ def train(args):
     print(f"Device: {device}; {len(train_files)} train / {len(val_files)} validation images", flush=True)
     for epoch in range(start, args.epochs):
         net.train()
-        total, seen = 0., 0
+        discriminator.train()
+        total = dict.fromkeys(["g_loss", "d_loss", "g_adversarial", "reconstruction"], 0.)
+        seen = 0
         for step, (inp, target) in enumerate(train_loader):
             inp, target = inp.to(device), target.to(device)
-            optimizer.zero_grad(set_to_none=True)
-            with torch.autocast(device_type=device.type, enabled=device.type == "cuda"):
-                pred = net(inp)
-                loss = restoration_loss(pred, target, inp[:, 3:4])
-            if not torch.isfinite(loss):
-                raise RuntimeError("Non-finite training loss; checkpoint was not overwritten.")
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            nn.utils.clip_grad_norm_(net.parameters(), 1.)
-            scaler.step(optimizer)
-            scaler.update()
-            total += loss.item()*len(inp)
+            losses = gan_train_step(net, discriminator, optimizer, optimizer_d, inp, target,
+                                    args.lambda_l1)
+            for name, value in losses.items():
+                total[name] += value * len(inp)
             seen += len(inp)
             if step % 25 == 0:
-                print(f"Epoch {epoch+1}/{args.epochs}, batch {step+1}/{len(train_loader)}, loss {loss.item():.4f}", flush=True)
-        schedule.step()
+                print(f"GAN epoch {epoch+1}/{args.epochs}, batch {step+1}/{len(train_loader)}, "
+                      f"G {losses['g_loss']:.4f}, D {losses['d_loss']:.4f}", flush=True)
         metrics = validate(net, val_loader, device)
         improved = metrics["psnr"] > best
         best, stale = max(best, metrics["psnr"]), 0 if improved else stale+1
-        row = {"epoch": epoch+1, "loss": total/seen, **metrics}
+        row = {"epoch": epoch+1, **{k:v/seen for k,v in total.items()}, **metrics}
         log = out/"history.csv"
         with log.open("a", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=list(row))
             if handle.tell() == 0:
                 writer.writeheader()
             writer.writerow(row)
-        checkpoint = {"format_version": 1, "state_dict": net.state_dict(), "base": 32,
+        checkpoint = {"format_version": 2, "model_type": "pix2pix_gan", "state_dict": net.state_dict(), "base": 32,
             "epoch": epoch+1, "best_psnr": best, "metrics": metrics, "config": vars(args),
-            "optimizer": optimizer.state_dict(), "scheduler": schedule.state_dict(), "scaler": scaler.state_dict()}
+            "discriminator": discriminator.state_dict(), "optimizer": optimizer.state_dict(),
+            "optimizer_d": optimizer_d.state_dict()}
         temporary = out/"pending.pt"
         torch.save(checkpoint, temporary)
         temporary.replace(out/"last.pt")
         if improved:
-            torch.save({k: v for k, v in checkpoint.items() if k not in {"optimizer", "scheduler", "scaler"}}, out/"best.pt")
+            torch.save({k: v for k, v in checkpoint.items() if k not in
+                        {"discriminator", "optimizer", "optimizer_d"}}, out/"best.pt")
         print(json.dumps(row), flush=True)
         if stale >= args.patience:
             print("Early stopping.", flush=True)
@@ -276,7 +328,9 @@ def train(args):
 
 def load_restorer(path, device="cpu"):
     checkpoint = torch.load(path, map_location=device, weights_only=True)
-    net = RestorationUNet(checkpoint.get("base", 32)).to(device)
+    if checkpoint.get("model_type") != "pix2pix_gan":
+        raise ValueError("Expected a Pix2Pix GAN checkpoint; supervised U-Net weights are not accepted as GAN weights.")
+    net = Pix2PixGenerator(checkpoint.get("base", 32)).to(device)
     net.load_state_dict(checkpoint["state_dict"])
     net.eval()
     return net, checkpoint
@@ -325,17 +379,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train-dir", default=str(ROOT/"data/DIV2K_train_HR"))
     parser.add_argument("--val-dir", default=str(ROOT/"data/DIV2K_valid_HR"))
-    parser.add_argument("--output", default=str(ROOT/"runs/restoration"))
+    parser.add_argument("--output", default=str(ROOT/"runs/pix2pix"))
     parser.add_argument("--epochs", type=int, default=60)
     parser.add_argument("--samples", type=int, default=4000)
     parser.add_argument("--size", type=int, default=256)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--lr", type=float, default=2e-4)
+    parser.add_argument("--lambda-l1", type=float, default=100., help="Weight of reconstruction relative to the GAN objective")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--patience", type=int, default=12)
     parser.add_argument("--resume")
     args = parser.parse_args()
-    if args.size < 32 or args.size % 8 or min(args.epochs,args.samples,args.batch_size,args.patience) < 1:
+    if args.lambda_l1 < 0 or args.size < 32 or args.size % 8 or min(args.epochs,args.samples,args.batch_size,args.patience) < 1:
         parser.error("size must be >=32 and divisible by 8; training counts must be positive")
     train(args)
