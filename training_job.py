@@ -1,5 +1,6 @@
 """Run full GAN training, then evaluation, recording progress for this local job."""
 import json
+import argparse
 import runpy
 import sys
 import traceback
@@ -11,7 +12,10 @@ packages = Path.home()/"Downloads/DL-CA2-PROJECT/.venv/Lib/site-packages"
 if packages.is_dir():
     sys.path.insert(0, str(packages))
 sys.path.insert(0, str(project))
-output = project/"runs/pix2pix"
+preview = argparse.ArgumentParser(add_help=False)
+preview.add_argument("--output", default=str(project/"runs/pix2pix"))
+job_options, _ = preview.parse_known_args()
+output = Path(job_options.output).resolve()
 output.mkdir(parents=True, exist_ok=True)
 
 
@@ -31,7 +35,9 @@ try:
     runpy.run_path(str(project/"model.py"), run_name="__main__")
     status("running", "evaluation")
     config = json.loads((output/"config.json").read_text(encoding="utf-8"))
-    sys.argv = [str(project/"evaluate.py"), "--data", config["val_dir"], "--limit", "20"]
+    evaluation = project/"outputs"/("evaluation" if output.name == "pix2pix" else output.name+"_evaluation")
+    sys.argv = [str(project/"evaluate.py"), "--checkpoint", str(output/"best.pt"),
+                "--data", config["val_dir"], "--output", str(evaluation), "--limit", "20"]
     runpy.run_path(str(project/"evaluate.py"), run_name="__main__")
     status("completed", "training_and_evaluation")
 except BaseException as error:

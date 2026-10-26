@@ -25,3 +25,18 @@ The random-tensor smoke test above is not quality training evidence.
 | GAN + OpenCV selected-mask cleanup | 22.59 | 0.816 |
 
 The combined method improved average PSNR, but OpenCV had the highest average SSIM on this subset. Improvement is not uniform across images. These results use synthetic damage, known masks and clean references on the validation sources; they are not independent real-world test results. The app uses the GAN with OpenCV mask cleanup because the short GAN run leaves some thin scratches. Real user-uploaded photos with automatic masks may perform differently.
+
+## Three additional epochs and selected model
+
+Continued from the saved epoch-3 G/D networks and optimizers, with 800 patches per epoch and a new training augmentation seed. The best checkpoint was epoch 6. Fixed validation PSNR improved from 20.99 to 22.16 dB and SSIM from 0.7834 to 0.7968.
+
+On the same 20 synthetic evaluation photos:
+
+| Method | Previous PSNR | New PSNR | Previous SSIM | New SSIM |
+|---|---:|---:|---:|---:|
+| GAN only | 21.97 | 22.54 | 0.8000 | 0.8046 |
+| GAN + known-mask cleanup | 22.59 | 23.15 | 0.8161 | 0.8181 |
+
+Both selected measures improved, so the epoch-6 checkpoint was promoted. The epoch-3 checkpoint and evaluation are retained in `runs/pix2pix-backup-3`. These scores use known synthetic masks; automatic-mask performance on real photos can differ.
+
+The simplified frontend passed startup, simulated upload, automatic model restoration, one valid PNG download output and cached-rerun checks. It exposes no settings selectors, sliders, toggles or radio controls.

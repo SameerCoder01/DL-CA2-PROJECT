@@ -12,7 +12,7 @@ Only say "trained" after actual training completes and the results are checked.
 4. `gan_train_step` pehle D update, phir G update karta hai.
 5. `train` epochs repeat karta hai, validation aur checkpoints save karta hai.
 6. `neural_restore` inference mein sirf Generator chalata hai. Overlapping tiles memory limit karte hain. App uske baad `repair_scratches` se selected mask par OpenCV cleanup karta hai; yeh GAN se alag step hai.
-7. `App.py` input aur output display handle karta hai.
+7. `App.py` mein user sirf photo upload karta hai. App automatic mask, processing size aur trained Generator choose karta hai, phir original/restored images aur ek Download button dikhata hai. Technical settings aur graphs frontend se hata diye gaye hain.
 
 ## Main training step
 - `fake = generator(inp)`: damaged input ko restore karne ki current attempt.

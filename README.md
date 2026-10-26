@@ -2,6 +2,8 @@
 
 Streamlit frontend: `App.py`. PyTorch Generator, Discriminator and training: `model.py`.
 
+The user screen is deliberately simple: **upload -> automatic restoration -> original/restored photos -> one PNG download button**. There is no sidebar, technical settings, demo switch, mask upload or training dashboard in the customer-facing app. Scratch detection and processing size are chosen internally. Black-and-white photos keep their original color style.
+
 ## Model and training
 - A compact residual U-Net **Generator** restores damaged RGB + a damage mask.
 - A conditional **70x70 PatchGAN Discriminator** judges real clean and generated photos.
@@ -15,7 +17,7 @@ Streamlit frontend: `App.py`. PyTorch Generator, Discriminator and training: `mo
 Read [VIVA_GUIDE.md](VIVA_GUIDE.md) for the code explanation.
 
 ## Status
-The short 3-epoch GAN training run is complete. The local app loads `runs/pix2pix/best.pt`. See [VALIDATION.md](VALIDATION.md) for actual results and limits. Old supervised U-Net weights are rejected. On a fresh checkout without weights, the app exposes the labeled OpenCV baseline.
+The initial 3-epoch run and 3 additional epochs are complete (6 total). After a same-subset evaluation showed improvements, the local app was updated to the epoch-6 Generator at `runs/pix2pix/best.pt`. The previous checkpoint is preserved under `runs/pix2pix-backup-3`. See [VALIDATION.md](VALIDATION.md) for actual results and limits. Old supervised U-Net weights are rejected. A fresh checkout needs a trained checkpoint before restoration is available.
 
 Validation: eight local functional tests passed, including adversarial-only updates of both networks, checkpoint resume and Streamlit startup. These tests establish execution, not restoration quality.
 
