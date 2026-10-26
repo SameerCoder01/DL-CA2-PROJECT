@@ -1,0 +1,16 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Photo Restoration",
+      "type": "process",
+      "command": "${workspaceFolder}/../work/python312/python.exe",
+      "args": ["${workspaceFolder}/serve_here.py"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "group": {"kind": "build", "isDefault": true},
+      "presentation": {"reveal": "always", "panel": "dedicated", "focus": true},
+      "problemMatcher": [],
+      "runOptions": {"instanceLimit": 1}
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/../work/python312/python.exe",
+  "python.analysis.extraPaths": [
+    "../../../../../Downloads/DL-CA2-PROJECT/.venv/Lib/site-packages"
+  ]
+}
