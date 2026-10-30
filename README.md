@@ -17,7 +17,7 @@ The interface uses a responsive dark plum and lavender design, a dedicated uploa
 - A conditional **70x70 PatchGAN Discriminator** judges real clean and generated photos.
 - D loss = average binary cross-entropy for real=1 and fake=0.
 - G loss = adversarial binary cross-entropy + 100 x (scratch-weighted L1 + 0.15 x edge L1). Scratch pixels receive 9x weight, normalized by total weight.
-- Training alternates one D update and one G update using Adam, ordinary backward() and step().
+- Training alternates one D update and one G update using Adam , ordinary backward() and step().
 - Float32 keeps the code explainable. No mixed precision, perceptual network or learning-rate scheduler.
 - Only G is used at inference. The compact Generator is a Pix2Pix-style adaptation, not the original eight-level architecture.
 - Selected app output uses learned damage segmentation and LaMa inpainting; local Pix2Pix tone correction is conditional on low contrast. The earlier Pix2Pix + OpenCV interpolation is retained as an explicit legacy backend for comparisons.
